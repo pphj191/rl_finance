@@ -127,10 +127,11 @@ def train_model(
     market: str = "KRW-BTC",
     resume_path: Optional[str] = None,
     save_interval: int = 100,
-    eval_interval: int = 50
+    eval_interval: int = 50,
+    db_path: Optional[str] = None
 ) -> Dict:
     """모델 학습
-    
+
     Args:
         config: 트레이딩 설정
         episodes: 학습 에피소드 수
@@ -139,7 +140,8 @@ def train_model(
         resume_path: 재개할 모델 경로
         save_interval: 모델 저장 간격
         eval_interval: 평가 간격
-        
+        db_path: SQLite 데이터베이스 경로 (None이면 Upbit API 사용)
+
     Returns:
         학습 결과 딕셔너리
     """
@@ -151,38 +153,43 @@ def train_model(
     logging.info(f"모델 타입: {config.model_type}")
     logging.info(f"학습률: {config.learning_rate}")
     logging.info(f"배치 크기: {config.batch_size}")
-    
+    if db_path:
+        logging.info(f"데이터 소스: SQLite ({db_path})")
+    else:
+        logging.info(f"데이터 소스: Upbit API (실시간)")
+
     # 저장 디렉토리 생성
     os.makedirs(save_dir, exist_ok=True)
     save_config(config, save_dir)
-    
+
     # 디바이스 설정
     device = "cuda" if torch.cuda.is_available() else "cpu"
     logging.info(f"디바이스: {device}")
-    
+
     try:
-        # 트레이너 생성
+        # 모드 결정
+        training_mode = "offline" if db_path else "realtime"
+
+        # 트레이너 생성 (SQLite 데이터 또는 API 데이터 사용)
         trainer = TradingTrainer(
             config=config,
             market=market,
-            device=device
+            device=device,
+            db_path=db_path,  # SQLite 데이터베이스 경로 전달
+            mode=training_mode,
+            cache_enabled=True
         )
-        
+
         # 체크포인트에서 재개
-        start_episode = 0
         if resume_path and os.path.exists(resume_path):
-            checkpoint = torch.load(resume_path, map_location=device)
             trainer.agent.load_model(resume_path)
-            start_episode = checkpoint.get('episode', 0)
             logging.info(f"체크포인트 로드: {resume_path}")
-            logging.info(f"재개 에피소드: {start_episode}")
-        
-        # 학습 실행
+
+        # 학습 실행 (올바른 파라미터 사용)
         training_results = trainer.train(
-            episodes=episodes,
-            start_episode=start_episode,
-            save_interval=save_interval,
-            eval_interval=eval_interval
+            num_episodes=episodes,
+            save_frequency=save_interval,
+            eval_frequency=eval_interval
         )
         
         # 최종 모델 저장
@@ -310,15 +317,48 @@ def main():
         default="logs",
         help="로그 파일 디렉토리 (기본: logs)"
     )
-    
+    parser.add_argument(
+        "--db",
+        type=str,
+        default=None,
+        help="SQLite 데이터베이스 경로 (지정 시 Upbit API 대신 SQLite 사용)"
+    )
+    parser.add_argument(
+        "--collect-data",
+        action="store_true",
+        help="학습 전에 데이터를 수집하여 SQLite에 저장"
+    )
+    parser.add_argument(
+        "--data-count",
+        type=int,
+        default=1000,
+        help="수집할 데이터 개수 (기본: 1000)"
+    )
+
     args = parser.parse_args()
-    
+
     # 로깅 설정
     setup_logging(args.log_dir)
-    
+
+    # 데이터 수집 + 특성 추출 (필요 시)
+    if args.collect_data:
+        from trading_env.data_pipeline import prepare_offline_data
+        db_path = args.db or "data/market_data.db"
+        days = args.data_count // (24 * 60)  # 1분봉 기준 일수 계산
+        if days < 1:
+            days = 7  # 최소 7일
+
+        logging.info(f"오프라인 데이터 준비 시작: {args.market} ({days}일)")
+        prepare_offline_data(
+            market=args.market,
+            days=days,
+            db_path=db_path
+        )
+        logging.info("데이터 준비 완료")
+
     # 설정 로드
     config = load_config(args.config)
-    
+
     # 학습 실행
     train_model(
         config=config,
@@ -327,7 +367,8 @@ def main():
         market=args.market,
         resume_path=args.resume,
         save_interval=args.save_interval,
-        eval_interval=args.eval_interval
+        eval_interval=args.eval_interval,
+        db_path=args.db  # SQLite 데이터베이스 경로 전달
     )
 
 

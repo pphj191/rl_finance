@@ -341,12 +341,76 @@ class FeatureExtractor:
         for i in range(sequence_length, len(feature_data)):
             # 입력 시퀀스
             X.append(feature_data.iloc[i-sequence_length:i].values)
-            
+
             # 타겟 (다음 시점의 목표 값들)
             target_values = []
             for col in target_columns:
                 if col in feature_data.columns:
                     target_values.append(feature_data[col].iloc[i])
             y.append(target_values)
-        
+
         return np.array(X), np.array(y)
+
+    def extract_all(self, df: pd.DataFrame, include_ssl: bool = True) -> pd.DataFrame:
+        """
+        모든 특성 추출 (기술적 지표 + SSL)
+
+        Args:
+            df: 원본 OHLCV 데이터
+            include_ssl: SSL 특성 포함 여부
+
+        Returns:
+            모든 특성이 포함된 DataFrame
+        """
+        # 1. 기술적 지표 계산
+        features = self.extract_technical_indicators(df)
+
+        # 2. SSL 특성 추가
+        if include_ssl:
+            features = self.extract_ssl_features(features)
+
+        return features
+
+    def get_feature_vector(
+        self,
+        df: pd.DataFrame,
+        exclude_columns: Optional[List[str]] = None
+    ) -> Tuple[np.ndarray, List[str]]:
+        """
+        DataFrame을 numpy array로 변환 (환경에서 사용)
+
+        Args:
+            df: 특성 DataFrame
+            exclude_columns: 제외할 컬럼 리스트
+
+        Returns:
+            (feature_vector, feature_names)
+        """
+        if exclude_columns is None:
+            exclude_columns = []
+
+        # 수치형 컬럼 선택
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        # 제외할 컬럼 필터링
+        feature_columns = [
+            col for col in numeric_columns
+            if col not in exclude_columns
+        ]
+
+        # numpy array로 변환
+        feature_vector = df[feature_columns].values
+
+        return feature_vector, feature_columns
+
+    def get_feature_names(self, df: pd.DataFrame) -> List[str]:
+        """
+        특성 이름 리스트 반환
+
+        Args:
+            df: 특성 DataFrame
+
+        Returns:
+            특성 이름 리스트
+        """
+        return df.select_dtypes(include=[np.number]).columns.tolist()

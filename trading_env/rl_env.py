@@ -17,24 +17,72 @@ from .market_data import UpbitDataCollector, DataNormalizer
 
 class TradingEnvironment(gym.Env):
     """강화학습 트레이딩 환경"""
-    
-    def __init__(self, config: TradingConfig, market: str = "KRW-BTC"):
+
+    def __init__(
+        self,
+        config: TradingConfig,
+        market: str = "KRW-BTC",
+        data: Optional[pd.DataFrame] = None,
+        db_path: Optional[str] = None,
+        mode: str = "offline",
+        cache_enabled: bool = True
+    ):
+        """
+        Args:
+            config: 트레이딩 설정
+            market: 마켓 코드 (예: KRW-BTC)
+            data: 미리 준비된 데이터 (DataFrame)
+            db_path: SQLite 데이터베이스 경로
+            mode: "offline" (SQLite만) | "realtime" (캐시+계산)
+            cache_enabled: 캐시 사용 여부
+
+        Note:
+            data가 제공되면 해당 데이터 사용 (최우선)
+            db_path가 제공되면 DataPipeline 사용 (캐시 활용)
+            둘 다 None이면 Upbit API에서 실시간 데이터 수집
+        """
         super().__init__()
-        
+
         self.config = config
         self.market = market
-        self.data_collector = UpbitDataCollector(market)
-        self.normalizer = DataNormalizer(
-            method=config.normalization_method,
-            window=config.feature_window
-        )
-        
+        self.preloaded_data = data
+        self.db_path = db_path
+        self.mode = mode
+        self.cache_enabled = cache_enabled
+
+        # 데이터 파이프라인 설정
+        if db_path is not None:
+            # DataPipeline 사용 (SQLite 캐시 활용)
+            from .data_storage import MarketDataStorage
+            from .data_pipeline import DataPipeline
+
+            storage = MarketDataStorage(db_path)
+            self.pipeline = DataPipeline(
+                storage=storage,
+                mode=mode,
+                cache_enabled=cache_enabled,
+                normalization_method=config.normalization_method,
+                include_ssl=True
+            )
+        else:
+            self.pipeline = None
+            # 폴백: 기존 방식
+            if data is None:
+                self.data_collector = UpbitDataCollector(market)
+            else:
+                self.data_collector = None
+
+            self.normalizer = DataNormalizer(
+                method=config.normalization_method,
+                window=config.feature_window
+            )
+
         # 상태 및 액션 공간 정의
         self.action_space = spaces.Discrete(ActionSpace.get_num_actions())
-        
+
         # 관측 공간 (나중에 실제 데이터 기반으로 조정)
         self.observation_space = None  # reset에서 설정됨
-        
+
         # 환경 상태
         self.reset()
     
@@ -94,24 +142,45 @@ class TradingEnvironment(gym.Env):
     
     def _prepare_data(self) -> pd.DataFrame:
         """데이터 준비 및 전처리"""
-        # 과거 데이터 수집
+        # 1. 미리 준비된 데이터 사용 (최우선)
+        if self.preloaded_data is not None:
+            return self.preloaded_data.copy()
+
+        # 2. DataPipeline 사용 (SQLite 캐시 활용)
+        if self.pipeline is not None:
+            from datetime import datetime, timedelta
+
+            # 기간 설정 (최근 7일)
+            end_time = datetime.now()
+            start_time = end_time - timedelta(days=7)
+
+            # 파이프라인으로 처리된 데이터 로드
+            processed_data = self.pipeline.process_data(
+                market=self.market,
+                start_time=start_time,
+                end_time=end_time
+            )
+
+            return processed_data
+
+        # 3. 폴백: Upbit API에서 실시간 수집
         raw_data = self.data_collector.get_historical_data(
             count=500,  # 충분한 데이터 수집
             unit=1  # 1분봉
         )
-        
+
         if raw_data.empty:
             raise ValueError("데이터 수집 실패")
-        
+
         # 수치형 컬럼 선택
         numeric_columns = raw_data.select_dtypes(include=[np.number]).columns.tolist()
-        
+
         # 정규화
         normalized_data = self.normalizer.fit_transform(raw_data, numeric_columns)
-        
+
         # NaN 값 처리
         normalized_data = normalized_data.ffill().fillna(0)
-        
+
         return normalized_data
     
     def _get_observation(self) -> np.ndarray:

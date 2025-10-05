@@ -1,6 +1,6 @@
 # 개발 지침서 (Development Instructions)
 
-> **최종 업데이트**: 2025년 10월 05일 16:00
+> **최종 업데이트**: 2025년 10월 05일 18:15
 
 **Claude Code, github Copilot 위한 프로젝트 개발 핵심 규칙**
 
@@ -11,11 +11,11 @@
 개발 중 상세한 정보가 필요할 때 다음 순서로 문서를 참조하세요:
 
 1. **이 파일 (INSTRUCTIONS.md)** - 핵심 규칙 및 빠른 참조
-2. **[docs/TODO.md](../docs/TODO.md)** - 현재 작업 목록 및 우선순위
-3. **[docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
-4. **[docs/CODE_STANDARDS.md](../docs/CODE_STANDARDS.md)** - 코드 작성 표준
-5. **[docs/DEVELOPMENT_WORKFLOW.md](../docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
-6. **[docs/CHANGELOG.md](../docs/CHANGELOG.md)** - 개발 이력
+2. **[.github/docs/TODO.md](docs/TODO.md)** - 현재 작업 목록 및 우선순위
+3. **[.github/docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
+4. **[.github/docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md)** - 코드 작성 표준
+5. **[.github/docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
+6. **[.github/docs/CHANGELOG.md](docs/CHANGELOG.md)** - 개발 이력
 
 ---
 
@@ -57,17 +57,19 @@ rl/
 ### 5. 문서화 규칙
 
 #### 📍 문서 작성 위치
-**⚠️ 중요: 모든 문서는 `/docs/` 폴더에 작성**
+**⚠️ 중요: 개발 관련 문서는 `/.github/docs/` 폴더에 작성**
 
 ```
-✅ 올바른 위치:
-  /docs/TODO.md
-  /docs/CHANGELOG.md
-  /docs/PROJECT_STRUCTURE.md
-  /docs/CODE_STANDARDS.md
+✅ 올바른 위치 (개발 문서):
+  /.github/docs/TODO.md
+  /.github/docs/CHANGELOG.md
+  /.github/docs/PROJECT_STRUCTURE.md
+  /.github/docs/CODE_STANDARDS.md
 
-❌ 잘못된 위치:
-  /.github/docs/  (절대 사용 금지)
+📚 사용자 문서 위치:
+  /docs/SQLITE_USAGE.md     (사용자 가이드)
+  /docs/API_REFERENCE.md    (API 레퍼런스)
+  /docs/FAQ.md              (자주 묻는 질문)
 ```
 
 #### 📅 문서 업데이트 날짜 표시
@@ -77,7 +79,7 @@ rl/
 ```
 
 #### 📝 개발 로그 작성
-매일 작업 후 `docs/CHANGELOG.md`에 기록:
+매일 작업 후 `.github/docs/CHANGELOG.md`에 기록:
 ```markdown
 ## 2025-10-05
 ### ✅ 완료
@@ -155,7 +157,7 @@ python -m pytest tests/ --cov=.
 
 ## 📌 현재 우선순위 (2025-10-05)
 
-상세 내용은 **[docs/TODO.md](../docs/TODO.md)** 참조
+상세 내용은 **[.github/docs/TODO.md](docs/TODO.md)** 참조
 
 ### 🔴 즉시 실행
 1. 실행 스크립트 통합 테스트
@@ -177,15 +179,16 @@ python -m pytest tests/ --cov=.
 
 ## 📚 상세 문서 링크
 
-### 필수 문서
-- **[docs/TODO.md](../docs/TODO.md)** - 작업 목록 및 진행 상황
-- **[docs/CHANGELOG.md](../docs/CHANGELOG.md)** - 개발 이력
-- **[docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
+### 개발 문서 (/.github/docs/)
+- **[.github/docs/TODO.md](docs/TODO.md)** - 작업 목록 및 진행 상황
+- **[.github/docs/CHANGELOG.md](docs/CHANGELOG.md)** - 개발 이력
+- **[.github/docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
+- **[.github/docs/CODE_STANDARDS.md](docs/CODE_STANDARDS.md)** - 코드 작성 표준
+- **[.github/docs/FILE_NAMING.md](docs/FILE_NAMING.md)** - 파일 명명 규칙
+- **[.github/docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
 
-### 참조 문서
-- **[docs/CODE_STANDARDS.md](../docs/CODE_STANDARDS.md)** - 코드 작성 표준
-- **[docs/FILE_NAMING.md](../docs/FILE_NAMING.md)** - 파일 명명 규칙
-- **[docs/DEVELOPMENT_WORKFLOW.md](../docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
+### 사용자 문서 (/docs/)
+- **[docs/SQLITE_USAGE.md](../docs/SQLITE_USAGE.md)** - SQLite 사용 가이드
 
 ### API 문서
 - **[upbit_api/README.md](../upbit_api/README.md)** - Upbit API 문서

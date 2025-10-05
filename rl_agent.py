@@ -33,6 +33,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+import pandas as pd
 import random
 from collections import deque, namedtuple
 from typing import List, Tuple, Optional, Dict, Any
@@ -203,24 +204,49 @@ class RLAgent:
 
 class TradingTrainer:
     """트레이딩 에이전트 학습기"""
-    
-    def __init__(self, config: TradingConfig, market: str = "KRW-BTC",
-                 device: str = "cpu"):
+
+    def __init__(
+        self,
+        config: TradingConfig,
+        market: str = "KRW-BTC",
+        device: str = "cpu",
+        data: Optional[pd.DataFrame] = None,
+        db_path: Optional[str] = None,
+        mode: str = "offline",
+        cache_enabled: bool = True
+    ):
+        """
+        Args:
+            config: 트레이딩 설정
+            market: 마켓 코드
+            device: 학습 장치 (cpu/cuda)
+            data: 미리 준비된 데이터 (DataFrame)
+            db_path: SQLite 데이터베이스 경로
+            mode: "offline" (SQLite만) | "realtime" (캐시+계산)
+            cache_enabled: 캐시 사용 여부
+        """
         self.config = config
         self.market = market
         self.device = device
-        
-        # 환경 초기화
-        self.env = TradingEnvironment(config, market)
-        
+        self.mode = mode
+
+        # 환경 초기화 (데이터 소스 지정)
+        self.env = TradingEnvironment(
+            config, market,
+            data=data,
+            db_path=db_path,
+            mode=mode,
+            cache_enabled=cache_enabled
+        )
+
         # 에이전트 초기화
         obs, _ = self.env.reset()
         self.agent = RLAgent(config, len(obs), device)
-        
+
         # 로깅 설정
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
-        
+
         # 결과 저장 디렉토리
         self.save_dir = "models"
         os.makedirs(self.save_dir, exist_ok=True)
