@@ -1,179 +1,196 @@
-# 강화학습 암호화폐 트레이딩 시스템 개발 지침서
+# 개발 지침서 (Development Instructions)
 
-> **최종 업데이트**: 2025년 10월 04일 22:27
+> **최종 업데이트**: 2025년 10월 05일 16:00
 
-이 문서는 프로젝트의 개발, 유지보수, 확장을 위한 핵심 지침을 제공합니다.
+**Claude Code, github Copilot 위한 프로젝트 개발 핵심 규칙**
 
-## 📚 문서 구조
+---
 
-상세한 개발 가이드는 아래 문서들을 참조하세요:
+## 📋 문서 참조 우선순위
 
-- **[TODO.md](./docs/TODO.md)** - 작업 목록 및 진행 상황
-- **[PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세 분석
-- **[FILE_NAMING.md](./docs/FILE_NAMING.md)** - 파일 명명 규칙
-- **[CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)** - 코드 작성 표준
-- **[DEVELOPMENT_WORKFLOW.md](./docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
+개발 중 상세한 정보가 필요할 때 다음 순서로 문서를 참조하세요:
 
-## 🎯 핵심 원칙
+1. **이 파일 (INSTRUCTIONS.md)** - 핵심 규칙 및 빠른 참조
+2. **[docs/TODO.md](../docs/TODO.md)** - 현재 작업 목록 및 우선순위
+3. **[docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
+4. **[docs/CODE_STANDARDS.md](../docs/CODE_STANDARDS.md)** - 코드 작성 표준
+5. **[docs/DEVELOPMENT_WORKFLOW.md](../docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
+6. **[docs/CHANGELOG.md](../docs/CHANGELOG.md)** - 개발 이력
+
+---
+
+## 🎯 핵심 개발 규칙
 
 ### 1. 파일 크기 관리
 - **최대 500라인** 권장
-- 800라인 초과 시 분리 검토
-- 1000라인 초과 시 필수 분리
+- **800라인 초과** 시 분리 검토
+- **1000라인 초과** 시 필수 분리
 
-### 2. 명명 규칙
-- 실행 파일: `run_*.py`
-- 테스트 파일: `test_*.py`
-- 예제 파일: `example_*.py`
+### 2. 파일 명명 규칙
+| 파일 타입 | 접두사/위치 | 예시 |
+|---------|----------|------|
+| 실행 스크립트 | `run_*.py` | `run_train.py`, `run_backtest.py` |
+| 테스트 파일 | `test_*.py` (tests/) | `tests/test_models_dqn.py` |
+| 예제 파일 | `example_*.py` (examples/) | `examples/example_trading.py` |
+| 코어 모듈 | `core/*.py` | `core/backtesting_engine.py` |
 
-### 3. 코드 품질
-- 단일 책임 원칙 준수
-- Type hints 완전 적용
-- Docstring 작성 필수
-- 함수는 20라인 이하 권장
+### 3. 모듈 구조
+```
+rl/
+├── models/              # 신경망 모델 (DQN, LSTM, Transformer, Ensemble)
+├── trading_env/         # 트레이딩 환경 (RL 환경, 데이터 수집, 지표)
+├── core/                # 핵심 로직 (백테스팅, 성과측정, 시각화, 실시간 트레이딩)
+├── upbit_api/           # Upbit API 클라이언트
+├── bithumb_api/         # Bithumb API 클라이언트
+├── tests/               # 테스트 코드
+├── examples/            # 사용 예제
+└── docs/                # 📚 모든 문서는 여기에 작성
+```
 
-### 4. 문서화
-모든 `.md` 파일은 상단에 업데이트 날짜 및 시간 명시:
+### 4. 코드 품질 기준
+- ✅ **단일 책임 원칙** 준수
+- ✅ **Type hints** 완전 적용
+- ✅ **Docstring** 작성 필수 (Google 스타일)
+- ✅ **함수 크기** 20라인 이하 권장
+- ✅ **의존성 최소화** (순환 import 방지)
+
+### 5. 문서화 규칙
+
+#### 📍 문서 작성 위치
+**⚠️ 중요: 모든 문서는 `/docs/` 폴더에 작성**
+
+```
+✅ 올바른 위치:
+  /docs/TODO.md
+  /docs/CHANGELOG.md
+  /docs/PROJECT_STRUCTURE.md
+  /docs/CODE_STANDARDS.md
+
+❌ 잘못된 위치:
+  /.github/docs/  (절대 사용 금지)
+```
+
+#### 📅 문서 업데이트 날짜 표시
+모든 `.md` 파일 상단에 명시:
 ```markdown
-> **최종 업데이트**: YYYY년 MM월 DD일 HH:MM
+> **최종 업데이트**: 2025년 10월 05일 16:00
 ```
 
-## 🚀 빠른 시작
+#### 📝 개발 로그 작성
+매일 작업 후 `docs/CHANGELOG.md`에 기록:
+```markdown
+## 2025-10-05
+### ✅ 완료
+- 작업 내용
+### 🔄 진행중
+- 작업 내용
+### 🐛 수정
+- 버그 내용
+```
 
-### 개발 환경 설정
+---
+
+## 🚀 실행 스크립트
+
+### 1. 학습 (run_train.py)
 ```bash
-# 가상환경 생성 및 활성화
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# 패키지 설치
-pip install uv
-uv add torch gymnasium scikit-learn matplotlib pandas requests python-dotenv
-
-# 환경 검증
-python setup_check.py
+python run_train.py --model dqn --episodes 1000
 ```
 
-### 새 기능 개발
+### 2. 백테스팅 (run_backtest.py)
 ```bash
-# 브랜치 생성
-git checkout -b feature/new-feature
-
-# 개발 후 테스트
-python -m pytest tests/
-
-# 코드 품질 검사
-python -m black .
-python -m mypy .
+python run_backtest.py --start 2024-01-01 --end 2024-12-31
 ```
 
-## 📋 현재 작업 상황
+### 3. 실시간 트레이딩 (run_realtime_trading.py)
+```bash
+# 데모 모드
+python run_realtime_trading.py --demo
 
-### 완료된 작업 ✅
-- ✅ **파일 구조 정리** (trading_env 패키지 분리)
-- ✅ **디렉토리 구조 생성** (docs, tests, examples 폴더)
-- ✅ **파일 명명 규칙 통일** (run_ 접두사 적용)
-- ✅ **문서 체계화** (상세 문서 분리)
-- ✅ **models.py 패키지 분리** (models/ 패키지 완성)
+# 실제 트레이딩 (⚠️ 주의!)
+python run_realtime_trading.py --live
+```
 
-### 진행중인 작업 🔄
-- 🔄 **데이터 수집 시스템 구축** (SQLite 기반 orderbook 저장)
-- 🔄 **models.py 대체 작업** (새 패키지로 교체)
-- 🔄 **import 경로 정리** (프로젝트 전체 수정)
+---
 
-상세한 TODO는 [docs/TODO.md](./docs/TODO.md)를 참조하세요.
+## ⚠️ 개발 시 주의사항
 
-## ⚠️ 주의사항
+### 필수 체크리스트
+- [ ] 파일 크기 500라인 이하 유지
+- [ ] Type hints 모든 함수에 적용
+- [ ] Docstring 작성 완료
+- [ ] 순환 import 없음
+- [ ] 테스트 코드 작성 (새 기능)
+- [ ] API 키 하드코딩 없음
+- [ ] 변경 사항 CHANGELOG.md에 기록
 
-### 개발 시 주의할 점
+### 보안 주의사항
+- 🔒 API 키는 `.env` 파일에만 저장
+- 🔒 `.env` 파일 Git 커밋 절대 금지
+- 🔒 로그에 민감 정보 출력 금지
 
-1. **파일 크기 관리**
-   - 500라인 초과 시 분리 검토
-   - 기능별로 명확하게 분리
+---
 
-2. **의존성 관리**
-   - 순환 의존성 방지
-   - 최소한의 의존성 유지
-
-3. **테스트 커버리지**
-   - 새 기능은 반드시 테스트 작성
-   - 기존 테스트 깨뜨리지 않기
-
-4. **API 키 보안**
-   - 코드에 하드코딩 금지
-   - .env 파일 Git 커밋 금지
-
-5. **성능 고려**
-   - 대용량 데이터 처리 최적화
-   - 메모리 누수 방지
-
-## 🔧 유틸리티 명령어
+## 🔧 유용한 명령어
 
 ### 파일 크기 확인
 ```bash
-# 모든 Python 파일 크기 확인
-wc -l *.py | sort -nr
-
 # 500줄 초과 파일 찾기
 find . -name "*.py" -exec wc -l {} + | awk '$1 > 500 {print $0}'
 ```
 
 ### 코드 품질 검사
 ```bash
-# 포맷팅
-python -m black .
-python -m isort .
-
-# 타입 검사
-python -m mypy .
-
-# 복잡도 측정
-pip install radon
-radon cc --show-complexity .
+# 포맷팅 + 타입 검사
+python -m black . && python -m mypy .
 ```
 
 ### 테스트 실행
 ```bash
-# 모든 테스트 실행
-python -m pytest tests/
-
-# 커버리지 확인
-pip install coverage
-coverage run -m pytest
-coverage report
+# 모든 테스트 + 커버리지
+python -m pytest tests/ --cov=.
 ```
-
-## 📌 빠른 참조
-
-### 현재 우선순위
-1. 🔴 **데이터 수집 시스템 구축** (SQLite 기반 orderbook 저장)
-2. 🔴 **models.py 대체** (새 패키지로 교체)
-3. 🔴 **run_backtesting.py (509라인)** 분리
-
-### 최근 완료 작업
-- ✅ **문서 체계화** (상세 문서를 docs 폴더로 분리)
-- ✅ **TODO.md 분리** (INSTRUCTIONS.md에서 독립)
-- ✅ **models.py → models/ 패키지 분리 완료** (504라인 → 5개 모듈)
-
-## 📚 참고 문서
-
-### 내부 문서
-- [README.md](./README.md) - 프로젝트 개요 및 사용법
-- [docs/TODO.md](./docs/TODO.md) - 작업 목록
-- [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) - 프로젝트 구조
-- [docs/FILE_NAMING.md](./docs/FILE_NAMING.md) - 명명 규칙
-- [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) - 코드 표준
-- [docs/DEVELOPMENT_WORKFLOW.md](./docs/DEVELOPMENT_WORKFLOW.md) - 개발 워크플로우
-
-### API 문서
-- [upbit_api/README.md](./upbit_api/README.md) - Upbit API 문서
-- [bithumb_api/README.md](./bithumb_api/README.md) - Bithumb API 문서
-
-### 외부 참고 자료
-- [Python 스타일 가이드 (PEP 8)](https://pep8.org/)
-- [Type Hints (PEP 484)](https://www.python.org/dev/peps/pep-0484/)
-- [Docstring 규약 (PEP 257)](https://www.python.org/dev/peps/pep-0257/)
 
 ---
 
-**이 문서는 프로젝트와 함께 지속적으로 업데이트됩니다.**
+## 📌 현재 우선순위 (2025-10-05)
+
+상세 내용은 **[docs/TODO.md](../docs/TODO.md)** 참조
+
+### 🔴 즉시 실행
+1. 실행 스크립트 통합 테스트
+2. Import 경로 최종 검증
+
+### 🟡 이번 주 완료
+3. Stable-Baselines3 통합
+4. 데이터 수집 시스템 구축
+5. SSL 기반 데이터 예측
+
+### 🟢 장기 계획
+- 성능 최적화
+- 문서화 자동화
+- CI/CD 구축
+
+**진행률: 70%** (8/11 주요 작업 완료)
+
+---
+
+## 📚 상세 문서 링크
+
+### 필수 문서
+- **[docs/TODO.md](../docs/TODO.md)** - 작업 목록 및 진행 상황
+- **[docs/CHANGELOG.md](../docs/CHANGELOG.md)** - 개발 이력
+- **[docs/PROJECT_STRUCTURE.md](../docs/PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세
+
+### 참조 문서
+- **[docs/CODE_STANDARDS.md](../docs/CODE_STANDARDS.md)** - 코드 작성 표준
+- **[docs/FILE_NAMING.md](../docs/FILE_NAMING.md)** - 파일 명명 규칙
+- **[docs/DEVELOPMENT_WORKFLOW.md](../docs/DEVELOPMENT_WORKFLOW.md)** - 개발 워크플로우
+
+### API 문서
+- **[upbit_api/README.md](../upbit_api/README.md)** - Upbit API 문서
+- **[bithumb_api/README.md](../bithumb_api/README.md)** - Bithumb API 문서
+
+---
+
+**이 지침서는 프로젝트의 일관성과 품질을 유지하기 위한 핵심 규칙을 담고 있습니다.**

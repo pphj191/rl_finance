@@ -16,10 +16,10 @@ import json
 # 프로젝트 루트 디렉토리를 Python 경로에 추가
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from rl_trading_env import TradingEnvironment, TradingConfig
-from dqn_agent import DQNAgent, TradingTrainer
-from backtesting import Backtester
-from real_time_trader import RealTimeTrader, RiskConfig
+from trading_env import TradingEnvironment, TradingConfig
+from rl_agent import RLAgent, TradingTrainer
+from run_backtesting import Backtester
+from run_real_time_trader import RealTimeTrader, RiskConfig
 from upbit_api import UpbitAPI
 
 
@@ -65,7 +65,7 @@ def run_backtest(config: TradingConfig, model_path: str, start_date: str, end_da
     state_size = len(obs)
     
     # 에이전트 생성
-    agent = DQNAgent(config, state_size)
+    agent = RLAgent(config, state_size)
     
     # 모델 로드
     if os.path.exists(model_path):

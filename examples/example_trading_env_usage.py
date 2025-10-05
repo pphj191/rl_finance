@@ -4,6 +4,11 @@ Trading Environment 사용 예제
 새로 분리된 trading_env 패키지의 사용법을 보여줍니다.
 """
 
+import sys
+import os
+# 상위 디렉토리를 Python 경로에 추가
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 from trading_env import TradingConfig, ActionSpace, TradingEnvironment
 

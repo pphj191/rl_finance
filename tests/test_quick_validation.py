@@ -10,7 +10,8 @@ print("=== 강화학습 트레이딩 시스템 테스트 ===\n")
 try:
     # 1. 모듈 import 테스트
     print("1. 모듈 import 테스트...")
-    from rl_trading_env import TradingConfig, TradingEnvironment, ActionSpace
+    from trading_env import TradingEnvironment
+    from trading_env.rl_env import TradingConfig, ActionSpace
     print("✅ 모듈 import 성공!\n")
 
     # 2. 설정 생성 테스트

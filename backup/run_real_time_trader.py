@@ -21,8 +21,8 @@ from dataclasses import dataclass, asdict
 import json
 
 from upbit_api import UpbitAPI
-from rl_trading_env import TradingEnvironment, TradingConfig, ActionSpace, FeatureExtractor
-from dqn_agent import DQNAgent
+from trading_env import TradingEnvironment, TradingConfig, ActionSpace, FeatureExtractor
+from rl_agent import RLAgent
 
 
 @dataclass
@@ -146,7 +146,7 @@ class RealTimeTrader:
         self.risk_manager = RiskManager(risk_config)
         
         # 모델 로드
-        self.agent = DQNAgent(config, state_size=100)  # 실제 크기는 데이터에 따라 조정
+        self.agent = RLAgent(config, state_size=100)  # 실제 크기는 데이터에 따라 조정
         self.agent.load_model(model_path)
         
         # 데이터 버퍼

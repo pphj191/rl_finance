@@ -81,31 +81,32 @@ def check_virtual_environment():
 def check_required_packages():
     """필수 패키지 확인"""
     print("=== 필수 패키지 확인 ===")
-    
+
+    # (패키지명, import명) 튜플로 정의
     required_packages = [
-        'torch',
-        'gymnasium', 
-        'numpy',
-        'pandas',
-        'scikit-learn',
-        'matplotlib',
-        'seaborn',
-        'requests',
-        'PyJWT',
-        'websocket-client',
-        'python-dotenv',
-        'ta'
+        ('torch', 'torch'),
+        ('gymnasium', 'gymnasium'),
+        ('numpy', 'numpy'),
+        ('pandas', 'pandas'),
+        ('scikit-learn', 'sklearn'),
+        ('matplotlib', 'matplotlib'),
+        ('seaborn', 'seaborn'),
+        ('requests', 'requests'),
+        ('PyJWT', 'jwt'),
+        ('websocket-client', 'websocket'),
+        ('python-dotenv', 'dotenv'),
+        ('ta', 'ta')
     ]
-    
+
     missing_packages = []
-    
-    for package in required_packages:
+
+    for package_name, import_name in required_packages:
         try:
-            importlib.import_module(package.replace('-', '_'))
-            print(f"✅ {package}")
+            importlib.import_module(import_name)
+            print(f"✅ {package_name}")
         except ImportError:
-            print(f"❌ {package} - 설치 필요")
-            missing_packages.append(package)
+            print(f"❌ {package_name} - 설치 필요")
+            missing_packages.append(package_name)
     
     if missing_packages:
         print(f"⚠️  누락된 패키지: {', '.join(missing_packages)}")
@@ -120,26 +121,29 @@ def check_required_packages():
 def check_project_structure():
     """프로젝트 구조 확인"""
     print("=== 프로젝트 구조 확인 ===")
-    
+
     required_files = [
         'upbit_api/__init__.py',
         'upbit_api/upbit_api.py',
         'upbit_api/README.md',
         'bithumb_api/__init__.py',
-        'bithumb_api/bithumb_api.py', 
+        'bithumb_api/bithumb_api.py',
         'bithumb_api/README.md',
-        'rl_trading_env.py',
-        'models.py',
+        'trading_env/__init__.py',
+        'trading_env/rl_env.py',
+        'models/__init__.py',
+        'models/dqn.py',
         'dqn_agent.py',
-        'backtesting.py',
-        'real_time_trader.py',
+        'run_backtesting.py',
+        'run_real_time_trader.py',
         'run_trading_system.py',
         'README.md'
     ]
-    
+
     required_dirs = [
         'upbit_api/',
         'bithumb_api/',
+        'trading_env/',
         'models/'
     ]
     
@@ -225,15 +229,13 @@ def check_env_file():
 def check_module_imports():
     """모듈 import 확인"""
     print("=== 모듈 Import 확인 ===")
-    
+
     modules_to_test = [
         ('upbit_api', 'UpbitAPI'),
         ('bithumb_api', 'BithumbAPI'),
-        ('models', 'create_model'),
-        ('rl_trading_env', 'TradingEnvironment'),
-        ('dqn_agent', 'DQNAgent'),
-        ('backtesting', 'Backtester'),
-        ('real_time_trader', 'RealTimeTrader')
+        ('models', 'DQNModel'),
+        ('trading_env', 'TradingEnvironment'),
+        ('dqn_agent', 'DQNAgent')
     ]
     
     success_count = 0

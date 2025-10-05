@@ -1,9 +1,11 @@
 """
-DQN 에이전트 및 학습 코드
+강화학습 에이전트 및 학습 코드
+
+다양한 모델(DQN, LSTM, Transformer, Ensemble)을 지원하는 범용 RL 에이전트
 
 TODO:
 1. 학습 구현
-   - ✅ DQN 에이전트 클래스
+   - ✅ RL 에이전트 클래스
    - ✅ 경험 재생 버퍼
    - ✅ 학습 루프
    - ✅ 타겟 네트워크 업데이트
@@ -40,7 +42,7 @@ from datetime import datetime
 import os
 import json
 import logging
-from rl_trading_env import TradingEnvironment, TradingConfig, ActionSpace
+from trading_env import TradingEnvironment, TradingConfig, ActionSpace
 from models import create_model, ModelConfig
 
 # 경험 튜플 정의
@@ -66,8 +68,8 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
-class DQNAgent:
-    """DQN 에이전트"""
+class RLAgent:
+    """강화학습 에이전트 (DQN, LSTM, Transformer, Ensemble 지원)"""
     
     def __init__(self, config: TradingConfig, state_size: int, 
                  device: str = "cpu"):
@@ -213,7 +215,7 @@ class TradingTrainer:
         
         # 에이전트 초기화
         obs, _ = self.env.reset()
-        self.agent = DQNAgent(config, len(obs), device)
+        self.agent = RLAgent(config, len(obs), device)
         
         # 로깅 설정
         logging.basicConfig(level=logging.INFO)

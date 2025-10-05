@@ -1,7 +1,7 @@
 """
 Technical Indicators and Feature Extraction
 
-기술적 지표 계산 및 특성 추출을 담당하는 모듈입니다.
+기술적 지표(개인들의 시선) 계산 및 특성 추출을 담당하는 모듈입니다.
 """
 
 import numpy as np

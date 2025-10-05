@@ -35,8 +35,8 @@ from dataclasses import dataclass
 import warnings
 warnings.filterwarnings('ignore')
 
-from rl_trading_env import TradingEnvironment, TradingConfig, ActionSpace
-from dqn_agent import DQNAgent
+from trading_env import TradingEnvironment, TradingConfig, ActionSpace
+from rl_agent import RLAgent
 from upbit_api import UpbitAPI
 
 
@@ -62,7 +62,7 @@ class Backtester:
         self.config = config
         self.results = {}
     
-    def run_backtest(self, agent: DQNAgent, env: TradingEnvironment,
+    def run_backtest(self, agent: RLAgent, env: TradingEnvironment,
                     start_date: Optional[str] = None, 
                     end_date: Optional[str] = None) -> BacktestResult:
         """백테스트 실행"""
@@ -286,7 +286,7 @@ class RealTimeTrader:
         self.upbit = UpbitAPI()
         
         # 모델 로드
-        self.agent = DQNAgent(config, state_size=100)  # 임시 크기
+        self.agent = RLAgent(config, state_size=100)  # 임시 크기
         self.agent.load_model(model_path)
         
         # 거래 상태
@@ -423,7 +423,7 @@ def run_backtest_example():
         # 환경 및 에이전트 생성
         env = TradingEnvironment(config)
         obs, _ = env.reset()
-        agent = DQNAgent(config, len(obs))
+        agent = RLAgent(config, len(obs))
         
         # 백테스터 생성
         backtester = Backtester(config)
