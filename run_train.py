@@ -123,7 +123,7 @@ def save_config(config: TradingConfig, save_dir: str) -> None:
 def train_model(
     config: TradingConfig,
     episodes: int = 1000,
-    save_dir: str = "models",
+    save_dir: str = "models/saved",
     market: str = "KRW-BTC",
     resume_path: Optional[str] = None,
     save_interval: int = 100,
@@ -284,8 +284,8 @@ def main():
     parser.add_argument(
         "--model-dir",
         type=str,
-        default="models",
-        help="모델 저장 디렉토리 (기본: models)"
+        default="models/saved",
+        help="모델 저장 디렉토리 (기본: models/saved)"
     )
     parser.add_argument(
         "--market",

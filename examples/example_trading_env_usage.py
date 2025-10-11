@@ -87,7 +87,7 @@ def test_feature_extraction():
     print("=== Feature Extraction 테스트 ===")
     
     try:
-        from trading_env.indicators import FeatureExtractor
+        from trading_env.indicators_basic import FeatureExtractor
         import pandas as pd
         
         # 샘플 OHLCV 데이터 생성

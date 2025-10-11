@@ -1,6 +1,6 @@
 # 개발 지침서 (Development Instructions)
 
-> **최종 업데이트**: 2025년 10월 05일 18:15
+> **최종 업데이트**: 2025년 10월 09일 15:10
 
 **Claude Code, github Copilot 위한 프로젝트 개발 핵심 규칙**
 
@@ -60,16 +60,27 @@ rl/
 **⚠️ 중요: 개발 관련 문서는 `/.github/docs/` 폴더에 작성**
 
 ```
-✅ 올바른 위치 (개발 문서):
+✅ README.md 위치:
+  /README.md                (프로젝트 루트에 위치 - 사용자용 메인 문서)
+
+✅ 개발 문서 위치:
   /.github/docs/TODO.md
   /.github/docs/CHANGELOG.md
   /.github/docs/PROJECT_STRUCTURE.md
   /.github/docs/CODE_STANDARDS.md
+  /.github/docs/REWARD_DESIGN.md
+  /.github/docs/SSL_FEATURES_GUIDE.md
 
 📚 사용자 문서 위치:
-  /docs/SQLITE_USAGE.md     (사용자 가이드)
+  /docs/SQLITE_USAGE.md     (SQLite 사용 가이드)
+  /docs/DATA_PIPELINE_GUIDE.md (데이터 파이프라인 가이드)
   /docs/API_REFERENCE.md    (API 레퍼런스)
   /docs/FAQ.md              (자주 묻는 질문)
+
+📦 모듈별 문서:
+  /models/SB3_GUIDE.md      (Stable-Baselines3 가이드)
+  /upbit_api/README.md      (Upbit API 문서)
+  /bithumb_api/README.md    (Bithumb API 문서)
 ```
 
 #### 📅 문서 업데이트 날짜 표시

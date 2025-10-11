@@ -248,64 +248,92 @@ class TradingTrainer:
         self.logger = logging.getLogger(__name__)
 
         # 결과 저장 디렉토리
-        self.save_dir = "models"
+        self.save_dir = "models/saved"
         os.makedirs(self.save_dir, exist_ok=True)
+
+        # 시각화 저장 디렉토리
+        self.viz_dir = "results/visualizations"
+        os.makedirs(self.viz_dir, exist_ok=True)
     
-    def train(self, num_episodes: int = 1000, 
+    def train(self, num_episodes: int = 1000,
               save_frequency: int = 100,
               eval_frequency: int = 50) -> Dict[str, List[float]]:
         """학습 실행"""
-        
+
         self.logger.info(f"학습 시작: {num_episodes} 에피소드")
-        
+
         episode_rewards = []
         episode_losses = []
         episode_profits = []
-        
+
         for episode in range(num_episodes):
             state, _ = self.env.reset()
             total_reward = 0
             total_loss = 0
             step_count = 0
             initial_value = self.env.total_value
-            
+
+            # 에피소드별 액션 및 리워드 추적
+            episode_actions = []
+            episode_step_rewards = []
+            episode_prices = []
+            episode_balances = []
+            episode_positions = []
+            episode_action_names = []
+
             while True:
                 # 액션 마스크 가져오기
                 action_mask = self.env.get_action_mask()
-                
+
                 # 액션 선택
                 action = self.agent.select_action(state, action_mask, training=True)
-                
+
                 # 환경 스텝
                 next_state, reward, terminated, truncated, info = self.env.step(action)
                 done = terminated or truncated
-                
+
+                # 액션 및 리워드 추적 (info에서 실제 실행된 액션 이름 가져오기)
+                episode_actions.append(action)
+                episode_action_names.append(info['action'])  # 실제 실행된 액션 이름
+                episode_step_rewards.append(reward)
+                episode_prices.append(info['current_price'])
+                episode_balances.append(info['balance'])
+                episode_positions.append(info['position'])
+
                 # 경험 저장
                 self.agent.store_experience(state, action, reward, next_state, done, action_mask)
-                
+
                 # 학습
                 loss = self.agent.train_step()
                 total_loss += loss
                 total_reward += reward
                 step_count += 1
-                
+
                 state = next_state
-                
+
                 if done:
                     break
             
             # 타겟 네트워크 업데이트
             if episode % self.config.target_update == 0:
                 self.agent.update_target_network()
-            
+
             # 에피소드 결과 기록
             final_value = self.env.total_value
             profit_rate = (final_value - initial_value) / initial_value * 100
-            
+
             episode_rewards.append(total_reward)
             episode_losses.append(total_loss / max(step_count, 1))
             episode_profits.append(profit_rate)
-            
+
+            # 에피소드 시각화 (주기적으로 저장)
+            if episode % save_frequency == 0 and episode > 0:
+                viz_path = os.path.join(self.viz_dir, f"episode_{episode}.png")
+                self._plot_episode_actions(
+                    episode_actions, episode_action_names, episode_step_rewards,
+                    episode_prices, episode_balances, episode_positions, episode, viz_path
+                )
+
             # 로깅
             if episode % 10 == 0:
                 avg_reward = np.mean(episode_rewards[-10:])
@@ -346,6 +374,94 @@ class TradingTrainer:
         
         return results
     
+    def _plot_episode_actions(self, actions: List[int], action_names: List[str],
+                              rewards: List[float], prices: List[float],
+                              balances: List[float], positions: List[float],
+                              episode: int, save_path: str):
+        """에피소드 액션 및 리워드 시각화"""
+        fig, axes = plt.subplots(4, 1, figsize=(15, 12))
+
+        steps = list(range(len(actions)))
+
+        # 1. 가격 및 액션 표시
+        axes[0].plot(steps, prices, 'b-', alpha=0.5, linewidth=1.5, label='Price')
+        axes[0].set_ylabel('Price (KRW)', color='b', fontsize=10)
+        axes[0].tick_params(axis='y', labelcolor='b')
+
+        # Buy/Sell 액션 표시 (action_names를 사용해서 실제 실행된 액션 표시)
+        buy_steps = [i for i, name in enumerate(action_names) if 'BUY' in name]
+        sell_steps = [i for i, name in enumerate(action_names) if 'SELL' in name]
+
+        if buy_steps:
+            axes[0].scatter([steps[i] for i in buy_steps],
+                          [prices[i] for i in buy_steps],
+                          c='green', marker='^', s=150, label=f'Buy ({len(buy_steps)})',
+                          zorder=5, edgecolors='darkgreen', linewidth=1.5)
+        if sell_steps:
+            axes[0].scatter([steps[i] for i in sell_steps],
+                          [prices[i] for i in sell_steps],
+                          c='red', marker='v', s=150, label=f'Sell ({len(sell_steps)})',
+                          zorder=5, edgecolors='darkred', linewidth=1.5)
+
+        axes[0].set_title(f'Episode {episode} - Trading Actions', fontsize=12, fontweight='bold')
+        axes[0].legend(loc='upper left', fontsize=10)
+        axes[0].grid(True, alpha=0.3)
+
+        # 2. 스텝별 리워드
+        axes[1].plot(steps, rewards, 'g-', alpha=0.7, linewidth=1.5)
+        axes[1].axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        axes[1].set_ylabel('Reward', fontsize=10)
+        axes[1].set_title('Step Rewards', fontsize=11, fontweight='bold')
+        axes[1].grid(True, alpha=0.3)
+
+        # 양수/음수 영역 색칠
+        axes[1].fill_between(steps, 0, rewards, where=[r >= 0 for r in rewards],
+                            color='green', alpha=0.2, interpolate=True)
+        axes[1].fill_between(steps, 0, rewards, where=[r < 0 for r in rewards],
+                            color='red', alpha=0.2, interpolate=True)
+
+        # 3. 잔고 추이
+        axes[2].plot(steps, balances, 'orange', alpha=0.8, linewidth=2, label='Balance')
+        axes[2].fill_between(steps, 0, balances, alpha=0.2, color='orange')
+        axes[2].set_ylabel('Balance (KRW)', fontsize=10)
+        axes[2].set_title('Balance Over Time', fontsize=11, fontweight='bold')
+
+        # 잔고 통계 표시
+        avg_balance = np.mean(balances)
+        axes[2].axhline(y=avg_balance, color='blue', linestyle='--', alpha=0.5,
+                       label=f'Avg: {avg_balance:,.0f}')
+        axes[2].legend(fontsize=9)
+        axes[2].grid(True, alpha=0.3)
+        axes[2].ticklabel_format(style='plain', axis='y')
+
+        # 4. 포지션 추이
+        axes[3].plot(steps, positions, 'purple', alpha=0.8, linewidth=2, label='Position')
+        axes[3].fill_between(steps, 0, positions, alpha=0.2, color='purple')
+        axes[3].set_ylabel('Position (Coin)', fontsize=10)
+        axes[3].set_xlabel('Step', fontsize=10)
+        axes[3].set_title('Position Over Time', fontsize=11, fontweight='bold')
+
+        # 포지션 통계 표시
+        avg_position = np.mean(positions)
+        axes[3].axhline(y=avg_position, color='blue', linestyle='--', alpha=0.5,
+                       label=f'Avg: {avg_position:.4f}')
+        axes[3].legend(fontsize=9)
+        axes[3].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=100, bbox_inches='tight')
+        plt.close()
+
+        # 디버깅 정보 출력
+        num_buys = len(buy_steps)
+        num_sells = len(sell_steps)
+        num_holds = len(action_names) - num_buys - num_sells
+
+        self.logger.info(f"시각화 저장: {save_path}")
+        self.logger.info(f"  액션 통계: Buy={num_buys}, Sell={num_sells}, Hold={num_holds}")
+        self.logger.info(f"  잔고 범위: {min(balances):,.0f} ~ {max(balances):,.0f}")
+        self.logger.info(f"  포지션 범위: {min(positions):.6f} ~ {max(positions):.6f}")
+
     def evaluate(self, num_episodes: int = 10) -> Dict[str, float]:
         """모델 평가"""
         eval_rewards = []

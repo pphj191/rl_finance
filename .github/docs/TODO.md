@@ -1,6 +1,6 @@
 # TODO 목록
 
-> **최종 업데이트**: 2025년 10월 05일 15:38
+> **최종 업데이트**: 2025년 10월 06일
 
 ## 📊 전체 진행률: 70% (8/11 주요 작업 완료)
 
@@ -8,7 +8,188 @@
 
 ## 🔴 우선순위 최고 (즉시 실행)
 
-### 1. 실행 스크립트 통합 테스트
+### 0. 멀티 타임프레임 데이터 입력 구조 설계 ⭐ NEW
+
+**현재 상황**:
+- RL 에이전트 입력: **분단위 데이터(OHLCV + indicators)만 사용**
+- `rl_env.py`의 `_get_observation()`: `lookback_window` 크기의 1분봉 데이터 + 포트폴리오 정보
+
+**목표**:
+분단위, 시간단위, 일단위 데이터를 **동시에** 입력으로 활용
+- **단기 패턴** (1분봉): 즉각적인 가격 변동, 단기 노이즈
+- **중기 패턴** (1시간봉): 트렌드 및 모멘텀, 지지/저항선
+- **장기 패턴** (1일봉): 전체적인 시장 방향성, 매크로 트렌드
+
+**검토 필요 항목**:
+
+#### 1. DB 스키마 설계
+- [ ] **옵션 1: 각 타임프레임별 별도 테이블**
+  ```sql
+  CREATE TABLE ohlcv_1m (timestamp, open, high, low, close, volume, ...)
+  CREATE TABLE ohlcv_1h (timestamp, open, high, low, close, volume, ...)
+  CREATE TABLE ohlcv_1d (timestamp, open, high, low, close, volume, ...)
+  CREATE TABLE processed_data_1m (...)
+  CREATE TABLE processed_data_1h (...)
+  CREATE TABLE processed_data_1d (...)
+  ```
+  - 장점: 타임프레임별 독립적 관리, 쿼리 성능 최적화 용이
+  - 단점: 테이블 증가, 코드 중복 가능성
+
+- [ ] **옵션 2: 단일 테이블 + timeframe 컬럼**
+  ```sql
+  CREATE TABLE ohlcv (
+      market TEXT,
+      timeframe TEXT,  -- '1m', '1h', '1d'
+      timestamp DATETIME,
+      ...
+      PRIMARY KEY (market, timeframe, timestamp)
+  )
+  ```
+  - 장점: 단일 테이블로 관리 용이
+  - 단점: 쿼리 시 timeframe 필터링 필요, 인덱스 복잡도 증가
+
+- [ ] **옵션 3: processed_data 테이블에 멀티 타임프레임 특성 통합**
+  ```sql
+  CREATE TABLE processed_data (
+      ...
+      features_1m BLOB,   -- 1분봉 특성
+      features_1h BLOB,   -- 1시간봉 특성
+      features_1d BLOB,   -- 1일봉 특성
+      ...
+  )
+  ```
+  - 장점: 시간 동기화된 데이터 저장
+  - 단점: 각 row마다 모든 타임프레임 데이터 중복 저장
+
+#### 2. DataPipeline 확장
+- [ ] `process_multi_timeframe_data()` 메서드 추가
+  - 여러 타임프레임 데이터를 동시에 로드
+  - 타임스탬프 정렬 및 동기화 (1분 기준으로 1시간, 1일 데이터 매칭)
+  - 각 타임프레임별 지표 계산 (SMA, RSI 등의 window는 타임프레임에 맞게 조정)
+- [ ] 타임프레임 리샘플링 로직
+  - 1분봉 → 1시간봉 aggregation (60개 candle → 1개)
+  - 1분봉 → 1일봉 aggregation (1440개 candle → 1개)
+  - Upbit API에서 직접 가져오기 vs 로컬 리샘플링 성능 비교
+
+#### 3. Environment 입력 구조 설계
+- [ ] **옵션 1: 각 타임프레임을 별도 채널로 concat**
+  ```python
+  observation = {
+      '1m': np.array([60, features_1m]),    # 60분 lookback
+      '1h': np.array([24, features_1h]),    # 24시간 lookback
+      '1d': np.array([30, features_1d])     # 30일 lookback
+  }
+  # DQN 네트워크에서 각각 처리 후 fusion
+  ```
+  - 장점: 타임프레임별 독립적인 패턴 학습
+  - 단점: 네트워크 복잡도 증가
+
+- [ ] **옵션 2: Flatten 후 단일 벡터로 결합**
+  ```python
+  observation = np.concatenate([
+      features_1m.flatten(),   # 1분봉 특성
+      features_1h.flatten(),   # 1시간봉 특성
+      features_1d.flatten(),   # 1일봉 특성
+      portfolio_features
+  ])
+  ```
+  - 장점: 기존 DQN 네트워크 구조 재사용 가능
+  - 단점: 시계열 정보 손실, 차원 폭발
+
+- [ ] **옵션 3: 각 타임프레임에서 요약 통계만 추출**
+  ```python
+  summary_1m = extract_summary(features_1m)  # mean, std, min, max, trend 등
+  summary_1h = extract_summary(features_1h)
+  summary_1d = extract_summary(features_1d)
+  observation = np.concatenate([summary_1m, summary_1h, summary_1d, portfolio])
+  ```
+  - 장점: 차원 관리 용이, 해석 가능성
+  - 단점: 정보 손실 가능성
+
+#### 4. RL 네트워크 아키텍처 변경
+- [ ] Multi-scale feature extraction
+  - 각 타임프레임별 LSTM/CNN 인코더
+  - Feature pyramid network 방식
+- [ ] Temporal fusion 메커니즘
+  - Attention-based fusion (어떤 타임프레임이 중요한지 학습)
+  - Hierarchical representation learning
+- [ ] 타임프레임별 importance weighting
+  - 시장 상황에 따라 동적으로 가중치 조정
+  - 예: 급등/급락 시 → 단기 중시, 횡보 시 → 장기 중시
+
+#### 5. 데이터 수집 및 저장
+- [ ] Upbit API에서 멀티 타임프레임 데이터 수집 스크립트
+  ```python
+  # scripts/collect_multi_timeframe_data.py
+  collector.collect_all_timeframes(
+      market="KRW-BTC",
+      timeframes=['1m', '5m', '1h', '1d'],
+      days=30
+  )
+  ```
+- [ ] 타임프레임 간 일관성 검증
+  - 1분봉 60개 aggregation == 1시간봉 1개 검증
+  - 데이터 무결성 체크
+
+**참고 자료**:
+- Multi-Horizon Forecasting: https://arxiv.org/abs/1912.09363
+- Temporal Fusion Transformers: https://arxiv.org/abs/1912.09363
+- Multi-Scale Deep Neural Network: https://arxiv.org/abs/1703.03130
+
+---
+
+## 🔴 우선순위 최고 (즉시 실행)
+
+### 1. 트레이딩 액션 및 리워드 시스템 개선 ⭐ NEW
+
+#### 1-1. 부분 매수/매도 구현
+**현재 문제**:
+- 전액 매수/매도만 가능 (all-in/all-out)
+- 포지션 조절 불가능
+- 리스크 관리 어려움
+
+**개선 방안**:
+- [ ] **액션 공간 확장**
+  - 옵션 A: Discrete(9) - [HOLD, BUY_25%, BUY_50%, BUY_75%, BUY_100%, SELL_25%, SELL_50%, SELL_75%, SELL_100%]
+  - 옵션 B: MultiDiscrete([3, 4]) - [BUY/HOLD/SELL, 25%/50%/75%/100%]
+  - 옵션 C: Continuous(2) - [action_type (-1~1), amount_ratio (0~1)]
+
+- [ ] **환경 수정** (`trading_env/rl_env.py`)
+  ```python
+  # _execute_action 수정
+  def _execute_action(self, action: int, amount_ratio: float):
+      if action == BUY:
+          cost = self.balance * amount_ratio
+          # ...
+      elif action == SELL:
+          coins_to_sell = self.position * amount_ratio
+          # ...
+  ```
+
+- [ ] **에이전트 수정** (`rl_agent.py`)
+  - select_action 반환값: (action, amount_ratio)
+  - 네트워크 출력: Q-values for each (action, ratio) pair
+
+#### 1-2. 리워드 설계 개선
+**상세 설계는 `REWARD_DESIGN.md` 참조**
+
+- [ ] **매도 인센티브 추가**
+  - 수익 실현 보너스
+  - 손절 최소화 리워드
+  - 과도한 보유 페널티
+
+- [ ] **리워드 함수 구현** (`trading_env/reward_functions.py` 생성)
+  - [ ] 기본 리워드: 포트폴리오 수익률
+  - [ ] 매도 인센티브 리워드
+  - [ ] 위험 조정 리워드
+  - [ ] 복합 리워드
+
+- [ ] **리워드 테스트 및 비교**
+  - [ ] 각 리워드 함수별 학습 결과 비교
+  - [ ] 매수/매도 빈도 분석
+  - [ ] 수익률 및 안정성 평가
+
+### 2. 실행 스크립트 통합 테스트
 - [ ] **run_train.py 테스트**
   - [ ] 모델 생성 확인
   - [ ] 학습 루프 동작 확인

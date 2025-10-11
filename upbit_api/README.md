@@ -153,11 +153,50 @@ python example.py
 - `subscribe_trade(markets, callback)`: 체결 구독
 - `disconnect()`: 연결 종료
 
+## Rate Limit (요청 제한)
+
+이 클라이언트는 Upbit API의 Rate Limit Group을 자동으로 관리합니다.
+
+### Rate Limit Groups
+
+Upbit API는 엔드포인트별로 다른 Rate Limit 그룹을 사용합니다:
+
+| 그룹 | 0.5초당 제한 | 초당 제한 (공식) | 적용 API |
+|------|-------------|-----------------|----------|
+| `market` | 5회 | 10회 | 페어 목록 조회 |
+| `candle` | 5회 | 10회 | 캔들 조회 (분/일/주/월) |
+| `trade` | 5회 | 10회 | 체결 이력 조회 |
+| `ticker` | 5회 | 10회 | 현재가 조회 |
+| `orderbook` | 5회 | 10회 | 호가 정보 조회 |
+| `default` | 15회 | 30회 | Exchange 기본 API |
+| `order` | 4회 | 8회 | 주문 생성/취소 |
+
+### 자동 Rate Limit 관리
+
+- **그룹별 독립 관리**: 각 그룹은 독립적으로 Rate Limit을 추적하므로, 캔들 조회와 현재가 조회를 동시에 빠르게 수행할 수 있습니다.
+- **자동 대기**: 제한 초과 시 자동으로 0.5초 대기 후 재시도합니다.
+- **429 에러 자동 재시도**: 429 Too Many Requests 응답 시 1초 대기 후 최대 3회까지 자동 재시도합니다.
+- **실시간 로그**: 각 요청마다 현재 Rate Limit 상태를 로그로 출력합니다.
+
+### 로그 예시
+
+```
+[Upbit Rate Limit] [candle] 0.5초당: 1/5
+[Upbit Rate Limit] [candle] 0.5초당: 2/5
+[Upbit Rate Limit] [candle] 0.5초당: 5/5
+[Upbit Rate Limit] [candle] 0.5초당 요청 제한 (5회) 초과 - 0.5초 대기
+[Upbit Rate Limit] [candle] 0.5초당: 1/5
+```
+
+### 참고 문서
+
+- [Upbit API Rate Limits 공식 문서](https://docs.upbit.com/kr/reference/rate-limits)
+
 ## 주의사항
 
 1. **API 키 보안**: API 키는 절대 공개하지 마세요. `.env` 파일을 버전 관리에 포함하지 마세요.
 
-2. **요청 제한**: Upbit API는 요청 횟수 제한이 있습니다. 과도한 요청을 피하세요.
+2. **요청 제한**: Upbit API는 요청 횟수 제한이 있습니다. 이 클라이언트는 자동으로 Rate Limit을 관리하지만, 과도한 요청은 여전히 피해야 합니다.
 
 3. **테스트**: 실제 거래 전에 충분히 테스트하세요. 소액으로 먼저 테스트해보는 것을 권장합니다.
 

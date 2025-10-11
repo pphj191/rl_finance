@@ -13,6 +13,7 @@ from .dqn import DQNModel
 from .lstm import LSTMModel
 from .transformer import TransformerModel
 from .ensemble import EnsembleModel
+from .sb3_wrapper import SB3TradingModel, SB3_AVAILABLE
 
 
 def create_model(config: ModelConfig, state_size: int, action_size: int = 3) -> nn.Module:
@@ -40,8 +41,26 @@ def create_model(config: ModelConfig, state_size: int, action_size: int = 3) -> 
         return TransformerModel(state_size, action_size, config)
     elif config.model_type == "ensemble":
         return EnsembleModel(state_size, action_size, config)
+    elif config.model_type.startswith("sb3_"):
+        # Stable-Baselines3 모델
+        if not SB3_AVAILABLE:
+            raise ImportError(
+                "Stable-Baselines3 not installed. "
+                "Install with: pip install stable-baselines3"
+            )
+
+        # sb3_ppo, sb3_a2c, sb3_sac, sb3_td3, sb3_dqn
+        algorithm = config.model_type.replace("sb3_", "").upper()
+
+        return SB3TradingModel(
+            state_size=state_size,
+            action_size=action_size,
+            algorithm=algorithm,
+            learning_rate=config.learning_rate,
+            **getattr(config, 'sb3_params', {})
+        )
     else:
-        supported_types = ["dqn", "lstm", "gru", "transformer", "ensemble"]
+        supported_types = ["dqn", "lstm", "gru", "transformer", "ensemble", "sb3_ppo", "sb3_a2c", "sb3_sac", "sb3_td3", "sb3_dqn"]
         raise ValueError(f"지원하지 않는 모델 타입: {config.model_type}. "
                         f"지원되는 타입: {supported_types}")
 

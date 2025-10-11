@@ -12,7 +12,7 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from .data_storage import MarketDataStorage
-from .indicators import FeatureExtractor
+from .indicators_basic import FeatureExtractor
 from .market_data import DataNormalizer, UpbitDataCollector
 
 
@@ -273,5 +273,5 @@ def prepare_offline_data(
 
 
 if __name__ == "__main__":
-    # 테스트
+    # 간단한 테스트
     prepare_offline_data(market="KRW-BTC", days=7)

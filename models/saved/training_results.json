@@ -1,0 +1,8 @@
+{
+  "episodes": 1000,
+  "best_reward": 0,
+  "avg_reward": 0,
+  "final_epsilon": 0,
+  "training_time": 0,
+  "timestamp": "2025-10-07T01:05:36.233570"
+}

@@ -43,11 +43,15 @@ reports/
 *.pickle
 
 # Models
-models/*.h5
-models/*.pt
-models/*.pth
-models/*.ckpt
+models/saved/*.h5
+models/saved/*.pt
+models/saved/*.pth
+models/saved/*.ckpt
 !models/.gitkeep
+!models/saved/.gitkeep
+
+# Results
+results/
 
 # Data
 data/

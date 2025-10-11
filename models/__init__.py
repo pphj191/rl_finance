@@ -31,20 +31,26 @@ from .dqn import DQNModel
 from .lstm import LSTMModel
 from .transformer import TransformerModel, PositionalEncoding
 from .ensemble import EnsembleModel
+from .sb3_wrapper import SB3TradingModel, SB3_AVAILABLE, create_sb3_model
 from .factory import create_model, count_parameters, model_summary
 
 __all__ = [
     # 설정 클래스
     'ModelConfig',
     'PRESET_CONFIGS',
-    
+
     # 모델 클래스들
     'DQNModel',
-    'LSTMModel', 
+    'LSTMModel',
     'TransformerModel',
     'PositionalEncoding',
     'EnsembleModel',
-    
+    'SB3TradingModel',
+
+    # SB3 관련
+    'SB3_AVAILABLE',
+    'create_sb3_model',
+
     # 팩토리 함수들
     'create_model',
     'count_parameters',

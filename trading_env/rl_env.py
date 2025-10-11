@@ -258,10 +258,14 @@ class TradingEnvironment(gym.Env):
         
         # 현재 총 가치 계산
         self.total_value = self.balance + self.position * current_price
-        
+
         # 보상 계산 (수익률 기반)
-        reward = (self.total_value - prev_total_value) / prev_total_value
-        
+        if prev_total_value > 0:
+            reward = (self.total_value - prev_total_value) / prev_total_value
+        else:
+            # prev_total_value가 0인 경우 절대 변화량 사용
+            reward = (self.total_value - prev_total_value) / self.config.initial_balance
+
         return reward
     
     def _get_current_price(self) -> float:

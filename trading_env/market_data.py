@@ -85,36 +85,54 @@ class DataNormalizer:
 
 
 class UpbitDataCollector:
-    """Upbit 데이터 수집기"""
-    
+    """Upbit 데이터 수집기 (Rate Limit은 UpbitAPI에서 자동 관리)"""
+
+    MAX_CANDLES_PER_REQUEST = 200     # 1회 요청당 최대 봉 개수
+
     def __init__(self, market: str = "KRW-BTC"):
         if UpbitAPI is None:
             raise ImportError("UpbitAPI를 가져올 수 없습니다. upbit_api 모듈을 확인하세요.")
-        
+
         self.upbit = UpbitAPI()
         self.market = market
-        
+
         # FeatureExtractor는 필요시 동적으로 import
         self._feature_extractor = None
+        self.logger = logging.getLogger(__name__)
     
     @property
     def feature_extractor(self):
         """지연 로딩으로 FeatureExtractor 가져오기"""
         if self._feature_extractor is None:
-            from .indicators import FeatureExtractor
+            from .indicators_basic import FeatureExtractor
             self._feature_extractor = FeatureExtractor()
         return self._feature_extractor
     
     def get_historical_data(self, count: int = 200, unit: int = 1) -> pd.DataFrame:
-        """과거 데이터 수집"""
+        """
+        과거 데이터 수집 (Rate Limit은 UpbitAPI에서 자동 관리)
+
+        Args:
+            count: 수집할 봉 개수
+            unit: 봉 단위 (분 단위: 1, 3, 5, 10, 15, 30, 60, 240 / 일봉: 1440)
+
+        Returns:
+            OHLCV 데이터프레임
+        """
         try:
-            # 분봉 데이터 수집
-            candles = self.upbit.get_candles_minutes(self.market, unit=unit, count=count)
-            
+            # unit에 따라 적절한 API 호출
+            if unit == 1440:  # 일봉
+                candles = self.upbit.get_candles_days(self.market, count=count)
+            elif unit >= 60:  # 시간봉 이상
+                # Upbit API는 분봉만 지원하므로 시간봉도 분봉 API 사용
+                candles = self.upbit.get_candles_minutes(self.market, unit=unit, count=count)
+            else:  # 분봉
+                candles = self.upbit.get_candles_minutes(self.market, unit=unit, count=count)
+
             # DataFrame 변환
             df = pd.DataFrame(candles)
             df['timestamp'] = pd.to_datetime(df['candle_date_time_kst'])
-            
+
             # 필요한 컬럼 선택 및 이름 변경
             df = df.rename(columns={
                 'opening_price': 'open',
@@ -124,13 +142,13 @@ class UpbitDataCollector:
                 'candle_acc_trade_volume': 'volume',
                 'candle_acc_trade_price': 'value'
             })
-            
+
             # 시간순 정렬
             df = df.sort_values('timestamp').reset_index(drop=True)
-            
+
             # 기술적 지표 추가 (feature_extractor 자동 로드됨)
             df = self.feature_extractor.extract_technical_indicators(df)
-            
+
             return df
             
         except Exception as e:

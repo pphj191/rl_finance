@@ -17,6 +17,8 @@ import json
 import websocket
 import threading
 import time
+import logging
+from collections import deque
 from urllib.parse import unquote, urlencode
 from typing import Dict, List, Optional, Any, Union
 from dotenv import load_dotenv
@@ -25,26 +27,65 @@ from dotenv import load_dotenv
 class UpbitAPI:
     """
     Upbit API 클라이언트 클래스
-    
+
     시세 조회, 주문, 자산 관리 등의 기능을 제공합니다.
     """
-    
-    def __init__(self, access_key: Optional[str] = None, secret_key: Optional[str] = None):
+
+    # Rate Limit 그룹별 설정 (Upbit API 공식 문서 기준)
+    # https://docs.upbit.com/kr/reference/rate-limits
+    RATE_LIMIT_GROUPS = {
+        'market': {'per_second': 10},      # 페어 목록 조회
+        'candle': {'per_second': 10},      # 캔들 조회
+        'trade': {'per_second': 10},       # 체결 이력 조회
+        'ticker': {'per_second': 10},      # 현재가 조회
+        'orderbook': {'per_second': 10},   # 호가 정보 조회
+        'default': {'per_second': 30},     # Exchange 기본 그룹
+        'order': {'per_second': 8},        # 주문 생성/취소
+    }
+
+    # Rate Limit 추적 변수 (그룹별 요청 시간 deque)
+    _group_request_times = {}  # {group: deque([timestamp1, timestamp2, ...])}
+    _lock = threading.Lock()   # Thread-safe 접근
+
+    def _setup_logging(self, level: int):
+        """
+        로깅 설정
+
+        Args:
+            level (int): 로깅 레벨
+        """
+        # 기본 로깅 설정이 아직 안 되어 있다면 설정
+        if not logging.getLogger().hasHandlers():
+            logging.basicConfig(
+                level=level,
+                format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+
+        # 클래스별 로거 생성
+        self.logger = logging.getLogger(f"upbit_api.{self.__class__.__name__}")
+        self.logger.setLevel(level)
+
+    def __init__(self, access_key: Optional[str] = None, secret_key: Optional[str] = None, log_level: int = logging.INFO):
         """
         UpbitAPI 클라이언트 초기화
-        
+
         Args:
             access_key (str, optional): Upbit API Access Key
             secret_key (str, optional): Upbit API Secret Key
+            log_level (int): 로깅 레벨 (기본값: logging.INFO)
         """
+        # 로깅 설정
+        self._setup_logging(log_level)
+
         # .env 파일 로드
         load_dotenv()
-        
+
         self.access_key = access_key or os.getenv('UPBIT_ACCESS_KEY')
         self.secret_key = secret_key or os.getenv('UPBIT_SECRET_KEY')
         self.base_url = os.getenv('UPBIT_BASE_URL', 'https://api.upbit.com')
         self.websocket_url = os.getenv('UPBIT_WEBSOCKET_URL', 'wss://api.upbit.com/websocket/v1')
-        
+
         # 세션 설정
         self.session = requests.Session()
         self.session.headers.update({
@@ -90,60 +131,124 @@ class UpbitAPI:
         token = jwt.encode(payload, self.secret_key, algorithm="HS512")
         return token if isinstance(token, str) else token.decode('utf-8')
     
-    def _make_request(self, method: str, endpoint: str, params: Optional[Dict] = None, 
-                     data: Optional[Dict] = None, auth_required: bool = False) -> Dict:
+    def _wait_for_rate_limit(self, group: str = 'default'):
         """
-        HTTP 요청 실행
-        
+        Rate Limit 대기 (deque 기반 슬라이딩 윈도우)
+
+        N개 이전 요청이 1초 이내면 1초가 될 때까지 대기
+        """
+        if group not in self.RATE_LIMIT_GROUPS:
+            group = 'default'
+
+        max_requests = self.RATE_LIMIT_GROUPS[group]['per_second']
+
+        with UpbitAPI._lock:
+            # deque 초기화
+            if group not in UpbitAPI._group_request_times:
+                UpbitAPI._group_request_times[group] = deque(maxlen=max_requests)
+
+            request_times = UpbitAPI._group_request_times[group]
+            current_time = time.time()
+
+            # deque 가득 참 (N개 요청 완료)
+            if len(request_times) == max_requests:
+                oldest_time = request_times[0]
+                time_diff = current_time - oldest_time
+
+                # N번째 이전 요청이 1.05초 이내면 대기
+                if time_diff < 1.05:
+                    wait_time = 1.05 - time_diff    # 1.05초로 약간 여유있게 설정
+                    self.logger.debug(f"[Upbit Rate Limit] [{group}] {max_requests}회/초 도달 - {wait_time:.3f}초 대기")
+                    time.sleep(wait_time)
+                    current_time = time.time()
+
+            # 현재 요청 시간 추가
+            request_times.append(current_time)
+            self.logger.debug(f"[Upbit Rate Limit] [{group}] 1초당: {len(request_times)}/{max_requests}")
+
+    def _make_request(self, method: str, endpoint: str, params: Optional[Dict] = None,
+                     data: Optional[Dict] = None, auth_required: bool = False,
+                     max_retries: int = 3, rate_limit_group: str = 'default', log_level: Optional[int] = None) -> Dict:
+        """
+        HTTP 요청 실행 (Rate Limit 자동 적용 + 429 에러 자동 재시도)
+
         Args:
             method (str): HTTP 메서드 (GET, POST, DELETE)
             endpoint (str): API 엔드포인트
             params (Dict, optional): 쿼리 파라미터
             data (Dict, optional): 요청 본문 데이터
             auth_required (bool): 인증 필요 여부
-            
+            max_retries (int): 429 에러 발생 시 최대 재시도 횟수
+            rate_limit_group (str): Rate Limit 그룹
+
         Returns:
             Dict: API 응답
         """
-        url = f"{self.base_url}{endpoint}"
-        headers = {}
-        
-        # 인증이 필요한 경우 JWT 토큰 생성
-        if auth_required:
-            query_string = ""
-            if method.upper() == "GET" and params:
-                query_string = self._build_query_string(params)
-            elif method.upper() == "POST" and data:
-                query_string = self._build_query_string(data)
-            
-            jwt_token = self._create_jwt_token(query_string)
-            headers["Authorization"] = f"Bearer {jwt_token}"
-        
-        if method.upper() == "POST":
-            headers["Content-Type"] = "application/json"
-        
-        try:
-            if method.upper() == "GET":
-                response = self.session.get(url, params=params, headers=headers)
-            elif method.upper() == "POST":
-                response = self.session.post(url, json=data, headers=headers)
-            elif method.upper() == "DELETE":
-                response = self.session.delete(url, params=params, headers=headers)
-            else:
-                raise ValueError(f"지원하지 않는 HTTP 메서드: {method}")
-            
-            response.raise_for_status()
-            return response.json()
-            
-        except requests.exceptions.RequestException as e:
-            print(f"API 요청 실패: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    error_data = e.response.json()
-                    print(f"오류 상세: {error_data}")
-                except:
-                    print(f"응답 코드: {e.response.status_code}")
-            raise
+        if log_level is None:
+            log_level = logging.INFO
+        for attempt in range(max_retries):
+            # Rate Limit 체크 및 대기 (그룹별)
+            self._wait_for_rate_limit(group=rate_limit_group)
+
+            url = f"{self.base_url}{endpoint}"
+            headers = {}
+
+            # 인증이 필요한 경우 JWT 토큰 생성
+            if auth_required:
+                query_string = ""
+                if method.upper() == "GET" and params:
+                    query_string = self._build_query_string(params)
+                elif method.upper() == "POST" and data:
+                    query_string = self._build_query_string(data)
+
+                jwt_token = self._create_jwt_token(query_string)
+                headers["Authorization"] = f"Bearer {jwt_token}"
+
+            if method.upper() == "POST":
+                headers["Content-Type"] = "application/json"
+
+            try:
+                if method.upper() == "GET":
+                    response = self.session.get(url, params=params, headers=headers)
+                elif method.upper() == "POST":
+                    response = self.session.post(url, json=data, headers=headers)
+                elif method.upper() == "DELETE":
+                    response = self.session.delete(url, params=params, headers=headers)
+                else:
+                    raise ValueError(f"지원하지 않는 HTTP 메서드: {method}")
+
+                response.raise_for_status()
+                return response.json()
+
+            except requests.exceptions.HTTPError as e:
+                # 429 Too Many Requests 처리
+                if e.response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        self.logger.warning(f"[Upbit Rate Limit] 429 에러 발생 - 1초 후 재시도 ({attempt + 1}/{max_retries - 1})")
+                        time.sleep(1.0)
+                        continue
+                    else:
+                        self.logger.error(f"[Upbit Rate Limit] 429 에러 - 최대 재시도 횟수 초과")
+
+                # 429가 아니거나 재시도 횟수 초과한 경우
+                self.logger.error(f"API 요청 실패: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    try:
+                        error_data = e.response.json()
+                        self.logger.debug(f"오류 상세: {error_data}")
+                    except:
+                        self.logger.debug(f"응답 코드: {e.response.status_code}")
+                raise
+
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"API 요청 실패: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    try:
+                        error_data = e.response.json()
+                        self.logger.debug(f"오류 상세: {error_data}")
+                    except:
+                        self.logger.debug(f"응답 코드: {e.response.status_code}")
+                raise
     
     # =============================================================
     # 시세 정보 (Quotation) - 인증 불필요
@@ -152,11 +257,11 @@ class UpbitAPI:
     def get_markets(self) -> List[Dict]:
         """
         마켓 코드 목록 조회
-        
+
         Returns:
             List[Dict]: 마켓 정보 리스트
         """
-        return self._make_request("GET", "/v1/market/all")
+        return self._make_request("GET", "/v1/market/all", rate_limit_group='market')
     
     def get_candles_minutes(self, market: str, unit: int = 1, count: int = 200, 
                            to: Optional[str] = None) -> List[Dict]:
@@ -175,8 +280,8 @@ class UpbitAPI:
         params = {"market": market, "count": count}
         if to:
             params["to"] = to
-        
-        return self._make_request("GET", f"/v1/candles/minutes/{unit}", params=params)
+
+        return self._make_request("GET", f"/v1/candles/minutes/{unit}", params=params, rate_limit_group='candle')
     
     def get_candles_days(self, market: str, count: int = 200, to: Optional[str] = None, 
                         convertingPriceUnit: Optional[str] = None) -> List[Dict]:
@@ -197,44 +302,44 @@ class UpbitAPI:
             params["to"] = to
         if convertingPriceUnit:
             params["convertingPriceUnit"] = convertingPriceUnit
-        
-        return self._make_request("GET", "/v1/candles/days", params=params)
+
+        return self._make_request("GET", "/v1/candles/days", params=params, rate_limit_group='candle')
     
     def get_candles_weeks(self, market: str, count: int = 200, to: Optional[str] = None) -> List[Dict]:
         """
         주 캔들 조회
-        
+
         Args:
             market (str): 마켓 코드
             count (int): 캔들 개수 (최대 200)
             to (str, optional): 마지막 캔들 시각
-            
+
         Returns:
             List[Dict]: 캔들 데이터 리스트
         """
         params = {"market": market, "count": count}
         if to:
             params["to"] = to
-        
-        return self._make_request("GET", "/v1/candles/weeks", params=params)
-    
+
+        return self._make_request("GET", "/v1/candles/weeks", params=params, rate_limit_group='candle')
+
     def get_candles_months(self, market: str, count: int = 200, to: Optional[str] = None) -> List[Dict]:
         """
         월 캔들 조회
-        
+
         Args:
             market (str): 마켓 코드
             count (int): 캔들 개수 (최대 200)
             to (str, optional): 마지막 캔들 시각
-            
+
         Returns:
             List[Dict]: 캔들 데이터 리스트
         """
         params = {"market": market, "count": count}
         if to:
             params["to"] = to
-        
-        return self._make_request("GET", "/v1/candles/months", params=params)
+
+        return self._make_request("GET", "/v1/candles/months", params=params, rate_limit_group='candle')
     
     def get_trades_ticks(self, market: str, count: int = 200, to: Optional[str] = None, 
                         cursor: Optional[str] = None, daysAgo: Optional[int] = None) -> List[Dict]:
@@ -258,8 +363,8 @@ class UpbitAPI:
             params["cursor"] = cursor
         if daysAgo:
             params["daysAgo"] = daysAgo
-        
-        return self._make_request("GET", "/v1/trades/ticks", params=params)
+
+        return self._make_request("GET", "/v1/trades/ticks", params=params, rate_limit_group='trade')
     
     def get_ticker(self, markets: Union[str, List[str]]) -> List[Dict]:
         """
@@ -273,29 +378,29 @@ class UpbitAPI:
         """
         if isinstance(markets, str):
             markets = [markets]
-        
+
         markets_str = ",".join(markets)
         params = {"markets": markets_str}
-        
-        return self._make_request("GET", "/v1/ticker", params=params)
+
+        return self._make_request("GET", "/v1/ticker", params=params, rate_limit_group='ticker')
     
     def get_orderbook(self, markets: Union[str, List[str]]) -> List[Dict]:
         """
         호가 정보 조회
-        
+
         Args:
             markets (Union[str, List[str]]): 마켓 코드
-            
+
         Returns:
             List[Dict]: 호가 정보 리스트
         """
         if isinstance(markets, str):
             markets = [markets]
-        
+
         markets_str = ",".join(markets)
         params = {"markets": markets_str}
-        
-        return self._make_request("GET", "/v1/orderbook", params=params)
+
+        return self._make_request("GET", "/v1/orderbook", params=params, rate_limit_group='orderbook')
     
     # =============================================================
     # 자산 관리 (Exchange) - 인증 필요
@@ -753,14 +858,18 @@ class UpbitWebSocket:
     실시간 시세 데이터 수신을 위한 WebSocket 연결을 관리합니다.
     """
     
-    def __init__(self, access_key: Optional[str] = None, secret_key: Optional[str] = None):
+    def __init__(self, access_key: Optional[str] = None, secret_key: Optional[str] = None, log_level: int = logging.INFO):
         """
         UpbitWebSocket 클라이언트 초기화
         
         Args:
             access_key (str, optional): Upbit API Access Key
             secret_key (str, optional): Upbit API Secret Key
+            log_level (int): 로깅 레벨 (기본값: logging.INFO)
         """
+        # 로깅 설정
+        self._setup_logging(log_level)
+
         load_dotenv()
         
         self.access_key = access_key or os.getenv('UPBIT_ACCESS_KEY')
@@ -770,6 +879,25 @@ class UpbitWebSocket:
         self.ws = None
         self.callbacks = {}
         self.running = False
+    
+    def _setup_logging(self, level: int):
+        """
+        로깅 설정
+
+        Args:
+            level (int): 로깅 레벨
+        """
+        # 기본 로깅 설정이 아직 안 되어 있다면 설정
+        if not logging.getLogger().hasHandlers():
+            logging.basicConfig(
+                level=level,
+                format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+
+        # 클래스별 로거 생성
+        self.logger = logging.getLogger(f"upbit_websocket.{self.__class__.__name__}")
+        self.logger.setLevel(level)
     
     def _create_jwt_token(self) -> str:
         """
@@ -798,20 +926,20 @@ class UpbitWebSocket:
             if msg_type in self.callbacks:
                 self.callbacks[msg_type](data)
         except Exception as e:
-            print(f"메시지 처리 오류: {e}")
+            self.logger.error(f"메시지 처리 오류: {e}")
     
     def on_error(self, ws, error):
         """WebSocket 오류 콜백"""
-        print(f"WebSocket 오류: {error}")
+        self.logger.error(f"WebSocket 오류: {error}")
     
     def on_close(self, ws, close_status_code, close_msg):
         """WebSocket 연결 종료 콜백"""
-        print("WebSocket 연결이 종료되었습니다.")
+        self.logger.info("WebSocket 연결이 종료되었습니다.")
         self.running = False
     
     def on_open(self, ws):
         """WebSocket 연결 시작 콜백"""
-        print("WebSocket 연결이 시작되었습니다.")
+        self.logger.info("WebSocket 연결이 시작되었습니다.")
         self.running = True
     
     def connect(self, private: bool = False):
