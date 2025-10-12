@@ -131,7 +131,7 @@ class UpbitDataCollector:
 
             # DataFrame 변환
             df = pd.DataFrame(candles)
-            df['timestamp'] = pd.to_datetime(df['candle_date_time_kst'])
+            df['timestamp'] = pd.to_datetime(df['candle_date_time_utc'])
 
             # 필요한 컬럼 선택 및 이름 변경
             df = df.rename(columns={
