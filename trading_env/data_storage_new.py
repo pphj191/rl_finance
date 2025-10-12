@@ -41,18 +41,40 @@ def setup_module_logging(level: int = LOG_LEVEL):
 class MarketDataStorage:
     """
     SQLite 기반 시장 데이터 저장소 클래스
-    
+
     순수 SQLite 연동 기능만 제공:
     - 데이터 조회
     - 데이터 저장
     - 데이터 존재 확인
     - 테이블 관리
+
+    테이블 구조: 타임프레임별 분리
+    - market_1m (market, timestamp, open, high, low, close, volume)
+    - market_1h (market, timestamp, open, high, low, close, volume)
+    - market_1d (market, timestamp, open, high, low, close, volume)
     """
-    
+
+    # 지원하는 타임프레임과 테이블명 매핑
+    TIMEFRAME_TABLES = {
+        '1m': 'market_1m',
+        '3m': 'market_3m',
+        '5m': 'market_5m',
+        '10m': 'market_10m',
+        '15m': 'market_15m',
+        '30m': 'market_30m',
+        '60m': 'market_60m',
+        '1h': 'market_1h',
+        '4h': 'market_4h',
+        '240m': 'market_4h',
+        '1d': 'market_1d',
+        '1w': 'market_1w',
+        '1M': 'market_1M'
+    }
+
     def __init__(self, db_path: str = "data/market_data.db", log_level: int = LOG_LEVEL):
         """
         MarketDataStorage 초기화
-        
+
         Args:
             db_path: SQLite DB 파일 경로
             log_level: 로깅 레벨
@@ -60,50 +82,69 @@ class MarketDataStorage:
         self.db_path = db_path
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.logger.setLevel(log_level)
-        
+
         # DB 디렉토리 생성
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         # DB 연결 및 테이블 생성
         self._init_database()
-        
+
         self.logger.info(f"MarketDataStorage initialized: {db_path}")
     
+    def _get_table_name(self, timeframe: str) -> str:
+        """
+        타임프레임에 해당하는 테이블명 반환
+
+        Args:
+            timeframe: 타임프레임 (1m, 1h, 1d 등)
+
+        Returns:
+            테이블명 (예: market_1m, market_1h)
+
+        Raises:
+            ValueError: 지원하지 않는 타임프레임
+        """
+        if timeframe not in self.TIMEFRAME_TABLES:
+            raise ValueError(f"지원하지 않는 타임프레임: {timeframe}")
+        return self.TIMEFRAME_TABLES[timeframe]
+
     def _init_database(self):
-        """데이터베이스 테이블 초기화"""
+        """데이터베이스 테이블 초기화 - 타임프레임별 테이블 생성"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            # market_data 테이블 생성
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS market_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    market TEXT NOT NULL,
-                    timeframe TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    open REAL,
-                    high REAL,
-                    low REAL,
-                    close REAL,
-                    volume REAL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(market, timeframe, timestamp)
-                )
-            """)
-            
-            # 인덱스 생성
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_market_timeframe_timestamp
-                ON market_data(market, timeframe, timestamp)
-            """)
-            
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_timestamp
-                ON market_data(timestamp)
-            """)
-            
+
+            # 각 타임프레임별 테이블 생성
+            for table_name in set(self.TIMEFRAME_TABLES.values()):
+                # 테이블 생성
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {table_name} (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        market TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        volume REAL,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(market, timestamp)
+                    )
+                """)
+
+                # 인덱스 생성 - (market, timestamp) 복합 인덱스
+                cursor.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_market_timestamp
+                    ON {table_name}(market, timestamp)
+                """)
+
+                # 인덱스 생성 - timestamp 단독 인덱스
+                cursor.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table_name}_timestamp
+                    ON {table_name}(timestamp)
+                """)
+
             conn.commit()
-            self.logger.debug("Database tables initialized")
+            self.logger.debug(f"Database tables initialized: {len(self.TIMEFRAME_TABLES)} timeframe tables")
     
     # =============================================================
     # 데이터 조회 (읽기)
@@ -119,44 +160,46 @@ class MarketDataStorage:
     ) -> pd.DataFrame:
         """
         시장 데이터 조회
-        
+
         Args:
             market: 마켓 코드 (예: KRW-BTC)
             timeframe: 타임프레임 (1m, 5m, 1h, 1d 등)
             start_time: 시작 시간 (포함)
             end_time: 종료 시간 (포함)
             limit: 최대 반환 개수
-            
+
         Returns:
             DataFrame with columns: timestamp, open, high, low, close, volume
         """
-        query = """
+        table_name = self._get_table_name(timeframe)
+
+        query = f"""
             SELECT timestamp, open, high, low, close, volume
-            FROM market_data
-            WHERE market = ? AND timeframe = ?
+            FROM {table_name}
+            WHERE market = ?
         """
-        params = [market, timeframe]
-        
+        params = [market]
+
         if start_time:
             query += " AND timestamp >= ?"
             params.append(start_time.isoformat())
-        
+
         if end_time:
             query += " AND timestamp <= ?"
             params.append(end_time.isoformat())
-        
+
         query += " ORDER BY timestamp ASC"
-        
+
         if limit:
             query += f" LIMIT {limit}"
-        
+
         with sqlite3.connect(self.db_path) as conn:
             df = pd.read_sql_query(query, conn, params=params)
-        
+
         if not df.empty:
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             df = df.set_index('timestamp')
-        
+
         self.logger.debug(f"Loaded {len(df)} rows for {market} {timeframe}")
         return df
     
@@ -167,31 +210,33 @@ class MarketDataStorage:
     ) -> Tuple[Optional[datetime], Optional[datetime]]:
         """
         저장된 데이터의 시간 범위 조회
-        
+
         Args:
             market: 마켓 코드
             timeframe: 타임프레임
-            
+
         Returns:
             (시작 시간, 종료 시간) 또는 (None, None) if no data
         """
-        query = """
+        table_name = self._get_table_name(timeframe)
+
+        query = f"""
             SELECT MIN(timestamp), MAX(timestamp)
-            FROM market_data
-            WHERE market = ? AND timeframe = ?
+            FROM {table_name}
+            WHERE market = ?
         """
-        
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(query, (market, timeframe))
+            cursor.execute(query, (market,))
             result = cursor.fetchone()
-        
+
         if result and result[0] and result[1]:
             start = datetime.fromisoformat(result[0])
             end = datetime.fromisoformat(result[1])
             self.logger.debug(f"Data range for {market} {timeframe}: {start} ~ {end}")
             return start, end
-        
+
         self.logger.debug(f"No data found for {market} {timeframe}")
         return None, None
     
@@ -204,36 +249,38 @@ class MarketDataStorage:
     ) -> int:
         """
         저장된 데이터 개수 조회
-        
+
         Args:
             market: 마켓 코드
             timeframe: 타임프레임
             start_time: 시작 시간 (포함)
             end_time: 종료 시간 (포함)
-            
+
         Returns:
             데이터 개수
         """
-        query = """
+        table_name = self._get_table_name(timeframe)
+
+        query = f"""
             SELECT COUNT(*)
-            FROM market_data
-            WHERE market = ? AND timeframe = ?
+            FROM {table_name}
+            WHERE market = ?
         """
-        params = [market, timeframe]
-        
+        params = [market]
+
         if start_time:
             query += " AND timestamp >= ?"
             params.append(start_time.isoformat())
-        
+
         if end_time:
             query += " AND timestamp <= ?"
             params.append(end_time.isoformat())
-        
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
             count = cursor.fetchone()[0]
-        
+
         self.logger.debug(f"Data count for {market} {timeframe}: {count}")
         return count
     
@@ -272,42 +319,43 @@ class MarketDataStorage:
     ) -> int:
         """
         시장 데이터 저장
-        
+
         Args:
             market: 마켓 코드
             timeframe: 타임프레임
             df: DataFrame with columns: timestamp(index), open, high, low, close, volume
             replace: True면 중복 시 교체, False면 무시
-            
+
         Returns:
             저장된 행 개수
         """
         if df.empty:
             self.logger.warning("Empty DataFrame provided, nothing to save")
             return 0
-        
+
+        table_name = self._get_table_name(timeframe)
+
         # DataFrame 준비
         df_to_save = df.copy()
-        
+
         # 인덱스가 timestamp인 경우 컬럼으로 변환
         if df_to_save.index.name == 'timestamp' or isinstance(df_to_save.index, pd.DatetimeIndex):
             df_to_save = df_to_save.reset_index()
-        
+
         # timestamp 컬럼 확인
         if 'timestamp' not in df_to_save.columns:
             raise ValueError("DataFrame must have 'timestamp' column or DatetimeIndex")
-        
+
         # timestamp를 ISO 형식 문자열로 변환
         df_to_save['timestamp'] = pd.to_datetime(df_to_save['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-        
+
         # 필요한 컬럼만 선택
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         df_to_save = df_to_save[required_columns]
-        
-        # market, timeframe 컬럼 추가
+
+        # market 컬럼 추가
         df_to_save['market'] = market
-        df_to_save['timeframe'] = timeframe
-        
+
         # DB에 저장
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -316,12 +364,12 @@ class MarketDataStorage:
             if replace:
                 # INSERT OR REPLACE: 중복 시 교체
                 for _, row in df_to_save.iterrows():
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO market_data
-                        (market, timeframe, timestamp, open, high, low, close, volume)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {table_name}
+                        (market, timestamp, open, high, low, close, volume)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        row['market'], row['timeframe'], row['timestamp'],
+                        row['market'], row['timestamp'],
                         row['open'], row['high'], row['low'], row['close'], row['volume']
                     ))
                     if cursor.rowcount > 0:
@@ -330,12 +378,12 @@ class MarketDataStorage:
                 # INSERT OR IGNORE: 중복 시 무시
                 for _, row in df_to_save.iterrows():
                     try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO market_data
-                            (market, timeframe, timestamp, open, high, low, close, volume)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        cursor.execute(f"""
+                            INSERT OR IGNORE INTO {table_name}
+                            (market, timestamp, open, high, low, close, volume)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                         """, (
-                            row['market'], row['timeframe'], row['timestamp'],
+                            row['market'], row['timestamp'],
                             row['open'], row['high'], row['low'], row['close'], row['volume']
                         ))
                         if cursor.rowcount > 0:
@@ -344,7 +392,7 @@ class MarketDataStorage:
                         pass
 
             conn.commit()
-        
+
         self.logger.info(f"Saved {saved_count} rows for {market} {timeframe}")
         return saved_count
     
@@ -357,41 +405,43 @@ class MarketDataStorage:
     ) -> bool:
         """
         특정 타임스탬프의 데이터 업데이트
-        
+
         Args:
             market: 마켓 코드
             timeframe: 타임프레임
             timestamp: 타임스탬프
             **kwargs: 업데이트할 필드 (open, high, low, close, volume)
-            
+
         Returns:
             True if updated, False otherwise
         """
         if not kwargs:
             self.logger.warning("No fields to update")
             return False
-        
+
+        table_name = self._get_table_name(timeframe)
+
         # UPDATE 쿼리 생성
         set_clause = ", ".join([f"{k} = ?" for k in kwargs.keys()])
         query = f"""
-            UPDATE market_data
+            UPDATE {table_name}
             SET {set_clause}
-            WHERE market = ? AND timeframe = ? AND timestamp = ?
+            WHERE market = ? AND timestamp = ?
         """
-        
-        params = list(kwargs.values()) + [market, timeframe, timestamp.isoformat()]
-        
+
+        params = list(kwargs.values()) + [market, timestamp.isoformat()]
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
             updated = cursor.rowcount > 0
             conn.commit()
-        
+
         if updated:
             self.logger.debug(f"Updated data for {market} {timeframe} at {timestamp}")
         else:
             self.logger.debug(f"No data found to update for {market} {timeframe} at {timestamp}")
-        
+
         return updated
     
     # =============================================================
@@ -407,110 +457,134 @@ class MarketDataStorage:
     ) -> int:
         """
         데이터 삭제
-        
+
         Args:
             market: 마켓 코드
             timeframe: 타임프레임
             start_time: 시작 시간 (포함)
             end_time: 종료 시간 (포함)
-            
+
         Returns:
             삭제된 행 개수
         """
-        query = """
-            DELETE FROM market_data
-            WHERE market = ? AND timeframe = ?
+        table_name = self._get_table_name(timeframe)
+
+        query = f"""
+            DELETE FROM {table_name}
+            WHERE market = ?
         """
-        params = [market, timeframe]
-        
+        params = [market]
+
         if start_time:
             query += " AND timestamp >= ?"
             params.append(start_time.isoformat())
-        
+
         if end_time:
             query += " AND timestamp <= ?"
             params.append(end_time.isoformat())
-        
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
             deleted_count = cursor.rowcount
             conn.commit()
-        
+
         self.logger.info(f"Deleted {deleted_count} rows for {market} {timeframe}")
         return deleted_count
     
     def get_available_markets(self) -> List[str]:
         """
-        DB에 저장된 모든 마켓 목록 조회
-        
+        DB에 저장된 모든 마켓 목록 조회 (모든 타임프레임 테이블에서)
+
         Returns:
             마켓 코드 리스트
         """
-        query = "SELECT DISTINCT market FROM market_data ORDER BY market"
-        
+        markets_set = set()
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(query)
-            markets = [row[0] for row in cursor.fetchall()]
-        
-        return markets
+
+            # 각 테이블에서 마켓 조회
+            for table_name in set(self.TIMEFRAME_TABLES.values()):
+                try:
+                    cursor.execute(f"SELECT DISTINCT market FROM {table_name}")
+                    markets_set.update(row[0] for row in cursor.fetchall())
+                except sqlite3.OperationalError:
+                    # 테이블이 없는 경우 무시
+                    pass
+
+        return sorted(list(markets_set))
     
     def get_available_timeframes(self, market: str) -> List[str]:
         """
         특정 마켓의 사용 가능한 타임프레임 목록 조회
-        
+
         Args:
             market: 마켓 코드
-            
+
         Returns:
             타임프레임 리스트
         """
-        query = """
-            SELECT DISTINCT timeframe
-            FROM market_data
-            WHERE market = ?
-            ORDER BY timeframe
-        """
-        
+        available_timeframes = []
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(query, (market,))
-            timeframes = [row[0] for row in cursor.fetchall()]
-        
-        return timeframes
+
+            # 각 테이블에서 해당 마켓이 있는지 확인
+            for timeframe, table_name in self.TIMEFRAME_TABLES.items():
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE market = ?", (market,))
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        # 중복 제거를 위해 set 사용
+                        if timeframe not in available_timeframes:
+                            available_timeframes.append(timeframe)
+                except sqlite3.OperationalError:
+                    # 테이블이 없는 경우 무시
+                    pass
+
+        return sorted(available_timeframes)
     
     def get_database_stats(self) -> Dict[str, Any]:
         """
         데이터베이스 통계 정보 조회
-        
+
         Returns:
             통계 정보 딕셔너리
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            # 전체 행 개수
-            cursor.execute("SELECT COUNT(*) FROM market_data")
-            total_rows = cursor.fetchone()[0]
-            
-            # 마켓별 통계
-            cursor.execute("""
-                SELECT market, timeframe, COUNT(*), MIN(timestamp), MAX(timestamp)
-                FROM market_data
-                GROUP BY market, timeframe
-                ORDER BY market, timeframe
-            """)
+
+            total_rows = 0
             market_stats = []
-            for row in cursor.fetchall():
-                market_stats.append({
-                    'market': row[0],
-                    'timeframe': row[1],
-                    'count': row[2],
-                    'start': row[3],
-                    'end': row[4]
-                })
-        
+
+            # 각 테이블별 통계 수집
+            for timeframe, table_name in self.TIMEFRAME_TABLES.items():
+                try:
+                    # 테이블별 전체 행 개수
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                    table_rows = cursor.fetchone()[0]
+                    total_rows += table_rows
+
+                    # 마켓별 통계
+                    cursor.execute(f"""
+                        SELECT market, COUNT(*), MIN(timestamp), MAX(timestamp)
+                        FROM {table_name}
+                        GROUP BY market
+                        ORDER BY market
+                    """)
+                    for row in cursor.fetchall():
+                        market_stats.append({
+                            'market': row[0],
+                            'timeframe': timeframe,
+                            'count': row[1],
+                            'start': row[2],
+                            'end': row[3]
+                        })
+                except sqlite3.OperationalError:
+                    # 테이블이 없는 경우 무시
+                    pass
+
         return {
             'total_rows': total_rows,
             'market_stats': market_stats
