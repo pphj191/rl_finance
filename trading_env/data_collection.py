@@ -23,7 +23,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from trading_env.data_storage_new import MarketDataStorage, align_timestamp
+from trading_env.data_storage import MarketDataStorage, align_timestamp
 from upbit_api.upbit_api import UpbitAPI
 
 

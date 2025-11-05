@@ -342,7 +342,7 @@ def main():
 
     # 데이터 수집 + 특성 추출 (필요 시)
     if args.collect_data:
-        from trading_env.data_pipeline import prepare_offline_data
+        from trading_env.env_pipeline import prepare_offline_data
         db_path = args.db or "data/market_data.db"
         days = args.data_count // (24 * 60)  # 1분봉 기준 일수 계산
         if days < 1:

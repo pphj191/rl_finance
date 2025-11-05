@@ -19,7 +19,7 @@ from .rl_env import TradingEnvironment
 from .market_data import UpbitDataCollector, DataNormalizer
 from .indicators_basic import FeatureExtractor
 from .data_storage import MarketDataStorage, collect_and_store_data
-from .data_pipeline import DataPipeline, prepare_offline_data
+from .env_pipeline import DataPipeline, prepare_offline_data
 from .indicators_ssl import SSLFeatureExtractor, SSLConfig
 
 __all__ = [

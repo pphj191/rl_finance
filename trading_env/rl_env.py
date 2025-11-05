@@ -54,7 +54,7 @@ class TradingEnvironment(gym.Env):
         if db_path is not None:
             # DataPipeline 사용 (SQLite 캐시 활용)
             from .data_storage import MarketDataStorage
-            from .data_pipeline import DataPipeline
+            from .env_pipeline import DataPipeline
 
             storage = MarketDataStorage(db_path)
             self.pipeline = DataPipeline(
