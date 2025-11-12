@@ -104,7 +104,7 @@ class UpbitDataCollector:
     def feature_extractor(self):
         """지연 로딩으로 FeatureExtractor 가져오기"""
         if self._feature_extractor is None:
-            from .indicators_basic import FeatureExtractor
+            from ..indicators.basic import FeatureExtractor
             self._feature_extractor = FeatureExtractor()
         return self._feature_extractor
     

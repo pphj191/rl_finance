@@ -11,9 +11,9 @@ import logging
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from .data_storage import MarketDataStorage
-from .indicators_basic import FeatureExtractor
-from .market_data import DataNormalizer, UpbitDataCollector
+from .data.storage import MarketDataStorage
+from .indicators.basic import FeatureExtractor
+from .data.market_data import DataNormalizer, UpbitDataCollector
 
 
 class DataPipeline:
@@ -228,7 +228,7 @@ def prepare_offline_data(
         normalization_method: 정규화 방법
         include_ssl: SSL 특성 포함 여부
     """
-    from .data_storage import collect_and_store_data
+    from .data.storage import collect_and_store_data
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
