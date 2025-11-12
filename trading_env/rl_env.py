@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Optional
 
 # 로컬 모듈 import
 from .base_env import TradingConfig, ActionSpace
-from .market_data import UpbitDataCollector, DataNormalizer
+from .data.market_data import UpbitDataCollector, DataNormalizer
 
 
 class TradingEnvironment(gym.Env):
@@ -53,7 +53,7 @@ class TradingEnvironment(gym.Env):
         # 데이터 파이프라인 설정
         if db_path is not None:
             # DataPipeline 사용 (SQLite 캐시 활용)
-            from .data_storage import MarketDataStorage
+            from .data.storage import MarketDataStorage
             from .env_pipeline import DataPipeline
 
             storage = MarketDataStorage(db_path)
